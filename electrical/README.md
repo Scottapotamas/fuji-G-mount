@@ -8,6 +8,8 @@ The electrical connections between the body and lens are made with 12 spring loa
 
 - Spring-loaded pins are on the body side, flat pads are on the lens side.
 - The spring section of the pins have a 1.0 mm diameter, and a maximum achievable travel of 0.8mm.
+- The spring pins have a conical/round tip.
+- The pins are gold.
 - The pins are spaced 6° apart, for a total span/range of 66°. There is no pin on the vertical from the mount center-point, the outermost edge pins are aligned at +33° and -33° from the vertical datum.
 
 ## Lens Side
