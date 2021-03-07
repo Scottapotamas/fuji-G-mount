@@ -1,0 +1,71 @@
+EESchema-LIBRARY Version 2.4
+#encoding utf-8
+#
+# appli_connector_POGO_P70-2100045R
+#
+DEF appli_connector_POGO_P70-2100045R P 0 40 Y N 1 F N
+F0 "P" 0 100 50 H V C CNN
+F1 "appli_connector_POGO_P70-2100045R" 0 -150 50 H V C CNN
+F2 "Applidyne_Connector:HARWIN_P70-2100045R" 0 -215 50 H I C CNN
+F3 "" 0 -500 50 H I C CNN
+F4 "HARWIN" 0 -300 60 H I C CNN "manf"
+F5 "P70-2100045R" 0 -400 60 H I C CNN "manf#"
+F6 "DigiKey" 0 -600 60 H I C CNN "Supplier"
+F7 "952-3134-1-ND" 0 -700 60 H I C CNN "Supplier Part No"
+F8 "https://www.digikey.com.au/product-detail/en/harwin-inc/P70-2100045R/952-3134-1-ND/6211207" 0 -800 60 H I C CNN "Supplier URL"
+F9 "1.004" 0 -950 60 H I C CNN "Supplier Price"
+F10 "10" 0 -1050 60 H I C CNN "Supplier Price Break"
+$FPLIST
+ P70-2100045*
+$ENDFPLIST
+DRAW
+S -50 5 10 -5 0 1 0 N
+S -50 50 50 -50 0 1 0 N
+X P1 1 -200 0 150 R 50 50 1 1 P
+ENDDRAW
+ENDDEF
+#
+# appli_connector_wurth_CONN_01X12
+#
+DEF appli_connector_wurth_CONN_01X12 P 0 40 Y N 1 F N
+F0 "P" 0 650 50 H V C CNN
+F1 "appli_connector_wurth_CONN_01X12" 100 0 50 V V C CNN
+F2 "Applidyne_Connector_Wurth:61301211121" 175 0 50 V I C CNN
+F3 "http://www.farnell.com/cad/2124416.pdf" 250 0 50 V I C CNN
+F4 "WURTH ELECTRONIK" 0 -450 60 H I C CNN "manf"
+F5 "61301211121" 0 -550 60 H I C CNN "manf#"
+F6 "Element 14" 0 -650 60 H I C CNN "Supplier"
+F7 "2356162" 0 -725 60 H I C CNN "Supplier Part No"
+F8 "http://au.element14.com/wurth-elektronik/61301211121/header-2-54mm-pin-tht-vert-12way/dp/2356162" 0 -825 60 H I C CNN "Supplier URL"
+F9 "0.36" 0 -925 60 H I C CNN "Supplier Price"
+F10 "1" 0 -1025 60 H I C CNN "Supplier Price Break"
+DRAW
+S -50 -600 50 600 0 1 0 N
+S -50 -545 10 -555 0 1 0 N
+S -50 -445 10 -455 0 1 0 N
+S -50 -345 10 -355 0 1 0 N
+S -50 -245 10 -255 0 1 0 N
+S -50 -145 10 -155 0 1 0 N
+S -50 -45 10 -55 0 1 0 N
+S -50 55 10 45 0 1 0 N
+S -50 155 10 145 0 1 0 N
+S -50 255 10 245 0 1 0 N
+S -50 355 10 345 0 1 0 N
+S -50 455 10 445 0 1 0 N
+S -50 555 10 545 0 1 0 N
+X P1 1 -200 550 150 R 50 50 1 1 P
+X P10 10 -200 -350 150 R 50 50 1 1 P
+X P11 11 -200 -450 150 R 50 50 1 1 P
+X P12 12 -200 -550 150 R 50 50 1 1 P
+X P2 2 -200 450 150 R 50 50 1 1 P
+X P3 3 -200 350 150 R 50 50 1 1 P
+X P4 4 -200 250 150 R 50 50 1 1 P
+X P5 5 -200 150 150 R 50 50 1 1 P
+X P6 6 -200 50 150 R 50 50 1 1 P
+X P7 7 -200 -50 150 R 50 50 1 1 P
+X P8 8 -200 -150 150 R 50 50 1 1 P
+X P9 9 -200 -250 150 R 50 50 1 1 P
+ENDDRAW
+ENDDEF
+#
+#End Library
