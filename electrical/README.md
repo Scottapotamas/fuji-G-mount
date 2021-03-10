@@ -11,6 +11,7 @@ The electrical connections between the body and lens are made with 12 spring loa
 - The spring pins have a conical/round tip.
 - The pins are gold.
 - The pins are spaced 6° apart, for a total span/range of 66°. There is no pin on the vertical from the mount center-point, the outermost edge pins are aligned at +33° and -33° from the vertical datum.
+- The mount (metal ring/bayonet assembly) is electrically common with the exposed metal inside the battery compartment, and `Pin 5` and `Pin 6`.
 
 ## Lens Side
 
@@ -21,6 +22,8 @@ The electrical connections between the body and lens are made with 12 spring loa
 - For ease of convention, I'll label this square pad as `Pin 1`, though I don't know what the official Fuji nomenclature is.
 
 - Based on this numbering scheme, `Pin 5` and `Pin 6` are mechanically the same contact rectangle, and therefore electrically common.
+
+- Unlike the body side mount, the lens mount/bayonet is not electrically common with `Pin 5` and `Pin 6`.
 
   
 
