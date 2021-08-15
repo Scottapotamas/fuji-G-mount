@@ -27,3 +27,31 @@ The electrical connections between the body and lens are made with 12 spring loa
 
   
 
+# Experiments with the MCEX-45G
+
+Extension tube provides probable contacts for both sides of the mount.
+
+Is the extension tube 'passive' or active?
+
+- Camera doesn't seem to distinguish or behave differently with tube attached.
+
+- Electrical connections appear to be direct connections - measurements below show measurement error.
+
+  | Pin-Pin           | Resistance (R) |
+  | ----------------- | -------------- |
+  | Flange            | 0.14           |
+  | 1 (square)        | 0.40           |
+  | 2                 | 0.08           |
+  | 3                 | 0.13           |
+  | 4                 | 0.12           |
+  | 5 (joined with 6) | 0.05           |
+  | 6 (joined with 5) | 0.08           |
+  | 7                 | 0.23           |
+  | 8                 | 0.20           |
+  | 9                 | 0.25           |
+  | 10                | 0.28           |
+  | 11                | 0.27           |
+  | 12                | 0.29           |
+
+
+
