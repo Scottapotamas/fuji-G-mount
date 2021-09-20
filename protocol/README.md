@@ -2,6 +2,16 @@
 
 Sniffing of the communications between the body and lens is achieved with a modified MCEX-45G, and builds from the basic electrical analysis described in [the electrical README](/electrical).
 
+### Logic Analyser Captures
+
+Useful trace files are committed to the `captures` folder.
+
+These files require Saleae's Logic 2 tool for viewing. It's freely available for download on their website [here](https://www.saleae.com/downloads/).
+
+Specific packets or sections of interest are converted into a more digestible form and are saved in `/packet-captures` as hex encoded binary files.
+
+
+
 # SPI Communication
 
 We can make the assumption about the specific IN/OUT pins because there ares in the logic captures which show one-way initial send packets, and occasional one-way responses.
