@@ -25,19 +25,18 @@ The electrical connections between the body and lens are made with 12 spring loa
 
 - Unlike the body side mount, the lens mount/bayonet is not electrically common with `Pin 5` and `Pin 6`.
 
-  
 
-# Experiments with the MCEX-45G
+# Poking the MCEX-45G
 
-Extension tube provides probable contacts for both sides of the mount.
+The extension tube provides probable contacts for both sides of the mount.
 
 - The extension tube's electrical connections are a straight 1:1 passthrough,
 
 - therefore, the camera cannot distinguish if the tube is attached.
 
-- Electrical connections appear to be direct connections - measurements below have measurement error.
+- Electrical connections appear to be direct connections - measurements below are subject to  measurement error.
 
-  | Pin-Pin           | Resistance (R) |
+  | Pin-Pin           | Resistance (Ω) |
   | ----------------- | -------------- |
   | Flange            | 0.14           |
   | 1 (square)        | 0.32           |
@@ -53,11 +52,39 @@ Extension tube provides probable contacts for both sides of the mount.
   | 11                | 0.27           |
   | 12                | 0.29           |
 
-After pulling the extension tube apart, the connections are made with a flex PCB, and substantially thicker traces are used on Pins 2 through 6 (which matches the lower resistance measurements made earlier).
+After pulling the extension tube apart, we know the connections are made with a flex PCB, and substantially thicker traces are used on Pins 2 through 6 (which matches the lower resistance measurements made earlier).
+
+Flange to flange conductivity doesn't seem to be something that's explicitly designed for, most mating surfaces on the extension tube are anodised (therefore not conductive by contact), so the electrical path is likely through the mounting screws.
+
+# Modifying the MCEX-45G for interactive instrumentation
+
+After dissasembly (again), the external ring and internal column were taped up to avoid scratches, and marked for a drilled hole.
+
+![gf-tube-cut-markup](./images/gf-tube-cut-markup.jpg)
+
+A 1.0mm pilot hole was drilled, followed by a 4.5mm bore. This was repeated for both cylindrical pieces. The holes were then de-burred and tape removed.
+
+![gf-tube-hole](./images/gf-tube-hole.jpg)
+
+The kapton tape protecting the through-hole pins from the body-side contacts was removed.
+
+Silicone flying leads were soldered to the back of the flex.
+
+Fresh kapton tape was applied to protect the solder joins from electrical contact with the tube/mount.
+
+![gf-tube-probe-internal-hookup](./images/gf-tube-probe-internal-hookup.jpg)
 
 
 
-# Poking around
+![gf-tube-probe-internal-routing](./images/gf-tube-probe-internal-routing.jpg)
+
+After full assembly, the assembly was tested with the camera/lens to ensure no loss of operation.
+
+The flying leads were crimped for a female 2.54mm header strip.
+
+![gf-tube-probe-wires-complete](./images/gf-tube-probe-wires-complete.jpg)
+
+
 
 ## Test Description
 
@@ -65,7 +92,7 @@ Voltage measurements taken with Keithley 2701 (front panel, 2 wire setup).
 
 Scope set to rising/falling trigger at 100mV, 1V/div and 5ms/div.
 
-Each pin was tested with the camera off, then turned on, autofocus engaged, turned off.
+Each pin was tested with the camera off, then turned on, autofocus engaged, then camera was turned off.
 
 The ground was assumed to be Pin 5 based on:
 
@@ -94,19 +121,68 @@ GFX 50R with MCEX-45G. No lens mounted.
 
 ## GF45mm connected
 
-GFX 50R with GF 45mm 2.8 via MCEX-45G.
+GFX 50R with GF 45mm f2.8 via MCEX-45G.
 
-| Pin  | Voltage              | Scope/Notes                                                  |
-| ---- | -------------------- | ------------------------------------------------------------ |
-| 1    | 0V                   | Never triggers scope, even with varied settings.<br />Acting as (part of ) lens detect? |
-| 2    | 5.32V                | Just DC.                                                     |
-| 3    | 6.72V                | Just DC.                                                     |
-| 4    | 8.01V                | Just DC.<br />Minor ~100mV ripple when focus motor engages.  |
-| 5    | -                    | Used as ground connection for scope                          |
-| 6    | -                    | Electrically common to Pin 5                                 |
-| 7    | 3.4V                 | Slow infrequent squarewaves.                                 |
-| 8    | 3.38V                | High speed edges, infrequently triggered.                    |
-| 9    | 0V - Normally low    | Squarewave, unclear but probably data line.                  |
-| 10   | 3.3V - Normally high | Squarewave, Obviously a clock line at 1.5MHz.<br />Used periodically. |
-| 11   | 0V - Normally low    | Squarewave, Obvious data line.                               |
-| 12   | 3.3V - Normally high | Squarewave, no discernable pattern.<br />Seems to go low when iris closes. |
+| Pin  | Voltage               | Scope/Notes                                                  |
+| ---- | --------------------- | ------------------------------------------------------------ |
+| 1    | 0V                    | Never triggers scope, even with varied settings.<br />Acting as (part of) lens detect? |
+| 2    | 5.32V                 | Just DC.                                                     |
+| 3    | 6.72V                 | Just DC.                                                     |
+| 4    | 8.01V                 | Just DC.<br />Minor ~100mV ripple when focus motor engages.  |
+| 5    | -                     | Used as ground connection for scope                          |
+| 6    | -                     | Electrically common to Pin 5                                 |
+| 7    | 3.4V - Normally high  | Infrequent squarewave behaviour.<br />No immediately recognisable pattern. |
+| 8    | 3.38V - Normally high | High speed edges, infrequently triggered.<br />Pulses LOW for approx 100-350ns at a 10ms interval. |
+| 9    | 0V - Normally low     | Squarewave, role unclear but probably data line.             |
+| 10   | 3.3V - Normally high  | Squarewave, obviously a clock line at 1.5MHz.<br />Used periodically. |
+| 11   | 0V - Normally low     | Squarewave, obvious data line.                               |
+| 12   | 3.3V - Normally high  | Squarewave, no discernable pattern.<br />Seems to go low when iris closes. |
+
+# Electrical Behaviour
+
+Oscilloscope traces and logic-analyser capture to give context to the basic behaviour.
+
+- All tests use the GFX50R and GF45mm with MCEX-45G.
+- The camera has shutter-speed set to 1/125th, ISO 100, normally F4, 
+- The camera was running from the internal battery only.
+- Grounding for the scope/logic analyser is through Pins 5 and 6 respectively.
+
+The LA capture below shows a simple sequence covering power on, focus, focus+photo, power off.
+
+![basic-behaviour](images/basic-behaviour.png)
+
+Pin names are listed in the left-hand column, and the timing markers along the top timeline have annotations matching their number/colour in the right-hand sidebar.
+
+## Pin 7
+
+- Trace is captured after the camera was asked to focus on an object. 
+- Logic level. Normally high.
+- No obvious pattern, but is mostly likely related to AF lens motor activation.
+
+![P7-FOCUS](/home/scott/projects/fuji-g-mount/electrical/scope-traces/P7-FOCUS.png)
+
+## Pin 10
+
+- 1.5Mhz squarewave on Pin 10.
+- Logic level. Normally high.
+- Is assumed to be a SPI style clock. 
+
+![P10-IDLE](./scope-traces/P10-IDLE.png)
+
+## Pin 11
+
+- Pin 11 appears to behave like a SPI style data line. 
+- Logic level. Normally low. 
+
+![P11-IDLE](./scope-traces/P11-IDLE.png)
+
+## Pin 12
+
+- Iris ring on lens is being twisted slowly by hand.
+- Logic level. Normally high.
+- Correlates to iris inside the lens closing. The short flickers in this trace anecdotally match the sound of the iris, and the exposure-flicker behaviour of the EVF as the camera adjusts.
+
+![P12-IRIS-TURNED](./scope-traces/P12-IRIS-TURNED.png)
+
+
+
