@@ -30,6 +30,27 @@ The electrical connections between the body and lens are made with 12 spring loa
 
 The extension tube provides probable contacts for both sides of the mount.
 
+Flange to flange conductivity doesn't seem to be something that's explicitly designed for, most mating surfaces on the extension tube are anodised (therefore not conductive by contact), so the electrical path is likely through the mounting screws.
+
+![MCEX45-lens-contacts](./images/MCEX45-lens-contacts.jpg)
+
+The camera-side electrical connections are larger through-hole style slugs which are soldered to the flex PCB and covered with some high quality kapton tape.
+
+The lens-side pins are more complicated. The spring contacts are actually a bespoke assembly that Fuji has designed, they don't use COTS style pogo-pins. 
+
+- Small copper or gold (plated?) pins slide in the plastic ring.
+- The flex PCB has circular exposed pads on fingers which contact the back of the gold pins. 
+- An injection molded plastic retainer contains individual springs for each contact (12 in total).
+- I'd recommend strongly avoiding pulling this sub-assembly apart. There are no features to retain or guide the springs, instead, the plastic retainer has 12 tiny holes presumably used with a jig during factory assembly. I had to make my own jig with needles.
+
+![MCEX45-flex-assembly](./images/MCEX45-flex-assembly.jpg)
+
+![MCEX45-flex-top](./images/MCEX45-flex-top.jpg)
+
+![MCEX45-flex-bottom](./images/MCEX45-flex-bottom.jpg)
+
+After inspecting the flex PCB,  we can assume the substantially thicker traces are used on Pins 2 through 6 are used for power delivery and grounding.
+
 - The extension tube's electrical connections are a straight 1:1 passthrough,
 
 - therefore, the camera cannot distinguish if the tube is attached.
@@ -52,9 +73,7 @@ The extension tube provides probable contacts for both sides of the mount.
   | 11                | 0.27           |
   | 12                | 0.29           |
 
-After pulling the extension tube apart, we know the connections are made with a flex PCB, and substantially thicker traces are used on Pins 2 through 6 (which matches the lower resistance measurements made earlier).
-
-Flange to flange conductivity doesn't seem to be something that's explicitly designed for, most mating surfaces on the extension tube are anodised (therefore not conductive by contact), so the electrical path is likely through the mounting screws.
+The extension tube was reassembled and tested working without issue. Assembly is mostly uneventful if the lens side contact springs are left alone. The whole process took about 3-4 hours.
 
 # Modifying the MCEX-45G for interactive instrumentation
 
@@ -84,7 +103,7 @@ The flying leads were crimped for a female 2.54mm header strip.
 
 ![gf-tube-probe-wires-complete](./images/gf-tube-probe-wires-complete.jpg)
 
-
+This process took about 2-3 hours.
 
 ## Test Description
 
