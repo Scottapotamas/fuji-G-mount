@@ -1,5 +1,9 @@
 # GF Mount Electrical Notes
 
+[`springboard`](./springboard) contains PCB design files for a pogo-pin based breakout used to electrically interface with a lens.
+
+General documentation below.
+
 # Basics
 
 The electrical connections between the body and lens are made with 12 spring loaded contacts (body) which mechanically align with 11 contact rectangles (lens).
@@ -105,6 +109,25 @@ The flying leads were crimped for a female 2.54mm header strip.
 
 This process took about 2-3 hours.
 
+
+
+# Electrical Behaviour
+
+Oscilloscope traces and logic-analyser capture to give context to the basic behaviour.
+
+- All tests use the GFX50R and GF45mm with MCEX-45G.
+- The camera has shutter-speed set to 1/125th, ISO 100, normally F4, 
+- The camera was running from the internal battery only.
+- Grounding for the scope/logic analyser is through Pins 5 and 6 respectively.
+
+The LA capture below shows a simple sequence covering power on, focus, focus+photo, power off.
+
+![basic-behaviour](images/basic-behaviour.png)
+
+Pin names are listed in the left-hand column, and the timing markers along the top timeline have annotations matching their number/colour in the right-hand sidebar.
+
+
+
 ## Test Description
 
 Voltage measurements taken with Keithley 2701 (front panel, 2 wire setup).
@@ -119,7 +142,7 @@ The ground was assumed to be Pin 5 based on:
 - Common with Pin 6 on lens mount side.
 - Electrically common (v.low resistance to Pin 6 and GFX body-side mount).
 
-## No lens connected
+### No lens connected
 
 GFX 50R with MCEX-45G. No lens mounted.
 
@@ -138,39 +161,28 @@ GFX 50R with MCEX-45G. No lens mounted.
 | 11   | 8mV      | -                                                            |
 | 12   | 15mV     | -                                                            |
 
-## GF45mm connected
+### GF45mm connected
 
 GFX 50R with GF 45mm f2.8 via MCEX-45G.
 
-| Pin  | Voltage               | Scope/Notes                                                  |
-| ---- | --------------------- | ------------------------------------------------------------ |
-| 1    | 0V                    | Never triggers scope, even with varied settings.<br />Acting as (part of) lens detect? |
-| 2    | 5.32V                 | Just DC.                                                     |
-| 3    | 6.72V                 | Just DC.                                                     |
-| 4    | 8.01V                 | Just DC.<br />Minor ~100mV ripple when focus motor engages.  |
-| 5    | -                     | Used as ground connection for scope                          |
-| 6    | -                     | Electrically common to Pin 5                                 |
-| 7    | 3.4V - Normally high  | Infrequent squarewave behaviour.<br />No immediately recognisable pattern. |
-| 8    | 3.38V - Normally high | High speed edges, infrequently triggered.<br />Pulses LOW for approx 100-350ns at a 10ms interval. |
-| 9    | 0V - Normally low     | Squarewave, role unclear but probably data line.             |
-| 10   | 3.3V - Normally high  | Squarewave, obviously a clock line at 1.5MHz.<br />Used periodically. |
-| 11   | 0V - Normally low     | Squarewave, obvious data line.                               |
-| 12   | 3.3V - Normally high  | Squarewave, no discernable pattern.<br />Seems to go low when iris closes. |
+| Pin  | Voltage |               | Scope/Notes                                                  |
+| ---- | ------- | ------------- | ------------------------------------------------------------ |
+| 1    | 0V      |               | Never triggers scope, even with varied settings.<br />Acting as (part of) lens detect? |
+| 2    | 5.32V   |               | Just DC.                                                     |
+| 3    | 6.72V   |               | Just DC.                                                     |
+| 4    | 8.01V   |               | Just DC.<br />Minor ~100mV ripple when focus motor engages.  |
+| 5    | -       | -             | Used as ground connection for scope                          |
+| 6    | -       | -             | Electrically common to Pin 5                                 |
+| 7    | 3.4V    | Normally high | Infrequent squarewave behaviour.<br />No immediately recognisable pattern. |
+| 8    | 3.38V   | Normally high | High speed edges, infrequently triggered.<br />Pulses LOW for approx 100-350ns at a 10ms interval. |
+| 9    | 0V      | Normally low  | Squarewave, role unclear but probably data line.             |
+| 10   | 3.3V    | Normally high | Squarewave, obviously a clock line at 1.5MHz.<br />Used periodically. |
+| 11   | 0V      | Normally low  | Squarewave, obvious data line.                               |
+| 12   | 3.3V    | Normally high | Squarewave, no discernable pattern.<br />Seems to go low when iris closes. |
 
-# Electrical Behaviour
 
-Oscilloscope traces and logic-analyser capture to give context to the basic behaviour.
 
-- All tests use the GFX50R and GF45mm with MCEX-45G.
-- The camera has shutter-speed set to 1/125th, ISO 100, normally F4, 
-- The camera was running from the internal battery only.
-- Grounding for the scope/logic analyser is through Pins 5 and 6 respectively.
 
-The LA capture below shows a simple sequence covering power on, focus, focus+photo, power off.
-
-![basic-behaviour](images/basic-behaviour.png)
-
-Pin names are listed in the left-hand column, and the timing markers along the top timeline have annotations matching their number/colour in the right-hand sidebar.
 
 ## Pin 7
 
