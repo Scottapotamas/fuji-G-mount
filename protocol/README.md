@@ -47,6 +47,64 @@ By manually inspecting logic captures, one example section helps determine the c
 
 # Protocol Analysis
 
+
+
+## Packet Structure
+
+The last byte appears to be a checksum
+
+## Checksum
+
+
+
+
+
+
+
+# Packet Analysis
+
+
+
+## Idle Packets
+
+When the camera is powered on but is otherwise sitting idle, we see a burst of transactions occur every 40ms.
+
+These packets represent the bulk of 'noise' when watching packet traces, so understanding, decoding and then filtering them represents a worthwhile effort.
+
+![idle-burst-4](./images/idle-burst-4.png)
+
+| Transmission # | Camera                | Lens                  |
+| -------------- | --------------------- | --------------------- |
+| 1              | `0x00 0x00 0x08 0x20` | -                     |
+| 2              | `0x?? 0x10 0x80 0x??` | `0x08 0x00 0x88 0x32` |
+| 3              | -                     | `0x03 0x80 0x08 0x3C` |
+| 4              | `0x08 0x00 0x88 0x??` | `0x?? 0x00 0x80 0x??` |
+
+On every third burst, we have 2 additional transactions (6 total).
+
+![idle-burst-6](./images/idle-burst-6.png)
+
+| Transmission # | Camera                | Lens                  |
+| -------------- | --------------------- | --------------------- |
+| 1              | `0x00 0x00 0x08 0x20` | -                     |
+| 2              | `0x?? 0x10 0x80 0x??` | `0x08 0x00 0x88 0x32` |
+| 3              | `0x00 0x00 0x09 0xA6` | `0x03 0x80 0x08 0x3C` |
+| 4              | `0x?? 0x00 0x88 0x??` | `0x?? 0x00 0x89 0x??` |
+| 5              | -                     | `0x00 0x15 0x09 0x9A` |
+| 6              | `0x08 0x00 0x89 0xB8` | `0x?? 0x00 0x80 0x??` |
+
+For both the 4 and 6 packet bursts, the first bytes marked as `0x??` seem to vary between subsequent bursts, but a random sampling of 5 bursts in a row gives a feel that they're not exhibiting packet counting behaviour.
+
+The final bytes marked `0x??` are most likely a CRC.
+
+
+
+
+
+
+
+
+
 ## Identification Packets
 
 After the camera is powered on, a series of `131B` transactions occur (each sent twice 3ms apart). Both transmissions appear to have identical payloads.
@@ -134,3 +192,73 @@ These transactions are from the body to the lens and **describe the body.**
 - The second section of data is unknown.
   - `59353438363118111397D010110841   5` in ASCII, with some unprintable bytes
   - Unknown data
+
+
+
+
+
+## Iris Packets?
+
+- What happens when the iris ring is rotated
+- What happens when the camera wants to close the iris for exposure or photos
+
+
+
+Starts when a packet we don't recognise prior to iris event `LOW` is found (manually).
+
+The iris event was 275ms long.
+
+Preceded by a standard set of IDLE 6-burst transmissions (coincidence or intentional?).
+
+#### Packet 1 
+
+Camera: `0x12 0x40 0x18 0xBA`
+
+Lens: -
+
+#### Packet 2
+
+Camera: `0x09 0x10 0x80 0x2A`
+
+Lens: `0x08 0x00 0x98 0xB6`
+
+#### Packet 3
+
+Camera:  `0x00 0x00 0x3F 0xC6` 
+
+Lens: `0x12 0x40 0x18 0xBA`
+
+##### Packet 4
+
+Camera: `0x0A 0x00 0x98 0x86`
+
+Lens: `0x09 0x00 0xBF 0xE0`
+
+Iris line goes low
+
+##### Packet 5
+
+Camera:  `0x00 0x00 0x00 0x00`
+
+Lens:  `0x00 0x00 0x3F 0xC6`
+
+##### Packet 6
+
+Camera:  `0x08 0x00 0xBF 0xD8`
+
+Lens:  `0x0A 0x00 0x80 0x22`
+
+##### Waiting
+
+40ms gap starts, followed by idle packets at normal interval
+
+`IDLE4` ` IDLE4` `IDLE6` `IDLE4` ` IDLE4` `IDLE6` 
+
+Then iris line returns to `HIGH`.
+
+
+
+
+
+
+
