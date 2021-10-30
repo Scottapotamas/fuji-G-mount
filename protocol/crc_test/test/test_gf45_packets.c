@@ -5,7 +5,7 @@
 #include "crc.h"
  
 // DEFINITIONS 
-#define CRC_DIVISOR 0xFF
+
 
 // PRIVATE TYPES
  
@@ -28,17 +28,97 @@ void tearDown(void)
  
 // TESTS
  
-void test_basic(void)
+
+// -------------------------------------------------
+
+// Body and lens send these packets each other during idle operation
+// These 4-byte transactions occur in a group of 4. Both sides have test cases.
+// Between clusters, some packets have single-byte changes which are listed as _n
+void test_body_idle_q1(void)
 {
-
     crc8( 0x00, &temp_crc_1 );
     crc8( 0x00, &temp_crc_1 );
-    crc8( 0x00, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
 
-    TEST_ASSERT_EQUAL_HEX( 0x00, temp_crc_1 );
-
+    TEST_ASSERT_EQUAL_HEX( 0x20, temp_crc_1 );
 }
 
+
+void test_body_idle_q2(void)
+{
+    crc8( 0x08, &temp_crc_1 );
+    crc8( 0x10, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x22, temp_crc_1 );
+}
+
+void test_body_idle_q2_2(void)
+{
+    crc8( 0x09, &temp_crc_1 );
+    crc8( 0x10, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x2A, temp_crc_1 );
+}
+
+void test_body_idle_q2_3(void)
+{
+    crc8( 0x0C, &temp_crc_1 );
+    crc8( 0x10, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x02, temp_crc_1 );
+}
+
+void test_lens_idle_q2(void)
+{
+    crc8( 0x08, &temp_crc_1 );
+    crc8( 0x00, &temp_crc_1 );
+    crc8( 0x88, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x32, temp_crc_1 );
+}
+
+void test_lens_idle_q3(void)
+{
+    crc8( 0x03, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
+    crc8( 0x08, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x3C, temp_crc_1 );
+}
+
+void test_lens_idle_q4(void)
+{
+    crc8( 0x08, &temp_crc_1 );
+    crc8( 0x00, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x12, temp_crc_1 );
+}
+
+void test_lens_idle_q4_2(void)
+{
+    crc8( 0x09, &temp_crc_1 );
+    crc8( 0x00, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x1A, temp_crc_1 );
+}
+
+void test_lens_idle_q4_3(void)
+{
+    crc8( 0x0C, &temp_crc_1 );
+    crc8( 0x00, &temp_crc_1 );
+    crc8( 0x80, &temp_crc_1 );
+
+    TEST_ASSERT_EQUAL_HEX( 0x32, temp_crc_1 );
+}
+
+// -------------------------------------------------
+
+// These packets are the GF45mm lens announcing itself to the body during startup
 
 void test_lens_announcement_first(void)
 {
