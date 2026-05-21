@@ -34,16 +34,11 @@ With this in mind, we now aim to identify the properties of the communications b
 By manually inspecting logic captures, one example section helps determine the clock behaviour.
 
 - The clock is high when inactive (CPOL = 1).
-
 - Data is valid on the clock's trailing edge (CPHA = 1)
-
   - Demonstrated by the edges on the first falling edge, and on falling edges aligned to 8-bit sequences.
-
     ![clock-phase-evidence](./images/clock-phase-evidence.png)
 
-
-
-
+As with typical SPI busses working with bidirectional transfers, there a fairly visible 1-packet delay between the body writing a field and the lens response. When I'm listing tx/rx pairs in a given transaction in this document, that offset isn't included unless specified.
 
 # Protocol Analysis
 
@@ -65,9 +60,9 @@ The last byte appears to be a checksum
 
 
 
-## Idle Packets
+## 'Idle' Packets
 
-When the camera is powered on but is otherwise sitting idle, we see a burst of transactions occur every 40ms.
+When the camera is powered on but is otherwise sitting idle, we see a burst of transactions occur every 40ms. These might not actually be idle, but they don't appear to change with iris control ring, current iris value, or focus ring movement.
 
 These packets represent the bulk of 'noise' when watching packet traces, so understanding, decoding and then filtering them represents a worthwhile effort.
 
@@ -80,7 +75,7 @@ These packets represent the bulk of 'noise' when watching packet traces, so unde
 | 3              | -                     | `0x03 0x80 0x08 0x3C` |
 | 4              | `0x08 0x00 0x88 0x??` | `0x?? 0x00 0x80 0x??` |
 
-On every third burst, we have 2 additional transactions (6 total).
+On every third burst, we have 2 additional transactions for a 6 transaction 'group'.
 
 ![idle-burst-6](./images/idle-burst-6.png)
 
@@ -93,16 +88,9 @@ On every third burst, we have 2 additional transactions (6 total).
 | 5              | -                     | `0x00 0x15 0x09 0x9A` |
 | 6              | `0x08 0x00 0x89 0xB8` | `0x?? 0x00 0x80 0x??` |
 
-For both the 4 and 6 packet bursts, the first bytes marked as `0x??` seem to vary between subsequent bursts, but a random sampling of 5 bursts in a row gives a feel that they're not exhibiting packet counting behaviour.
+For both the 4 and 6 packet bursts, the first bytes marked as `0x??` seem to vary between subsequent bursts, but a random sampling of 5 bursts in a row gives a feel that they're not immediately exhibiting packet counting behaviour.
 
-The final bytes marked `0x??` are most likely a CRC.
-
-
-
-
-
-
-
+The final bytes marked `0x??` are most likely a CRC, but it's not clear yet.
 
 
 ## Identification Packets
@@ -197,12 +185,10 @@ These transactions are from the body to the lens and **describe the body.**
 
 
 
-## Iris Packets?
+## Iris Packets
 
 - What happens when the iris ring is rotated
 - What happens when the camera wants to close the iris for exposure or photos
-
-
 
 Starts when a packet we don't recognise prior to iris event `LOW` is found (manually).
 
@@ -256,9 +242,107 @@ Lens:  `0x0A 0x00 0x80 0x22`
 
 Then iris line returns to `HIGH`.
 
+## Iris Close Command
+
+From the larger/recent dump of iris closures, the packet `00 00 3f c6` is found just before the iris closes in all cases. There's always another packet which has the lens responding, `n 00 bf ??` i.e. `0B 00 BF F0` immediately before the falling edge on the iris status IO.
+
+This behaviour doesn't occur when the control ring is rotated without dof preview on.
+
+It's unclear right now if that's a body/lens synchronisation or “prepare/execute stop-down” command.
+
+I also noticed that the iris IO line negative pulse that occurs when stopping down/up takes an increasing amount of time based on the 'stop distance' in the transition. I suspect this signal might indicate 'iris OK' or similar. 
 
 
 
+## Aperture Control Ring
 
+From the large set of lens iris change captures, a pattern across the captures started to be more obvious in the packets sent from the lens to the body (i.e. body rx):
 
+```
+rx 00 02 0c ??
+rx 00 03 0c ??
+rx 00 04 0c ??
+...
+rx 00 10 0c ??
+...
+rx 00 16 0c ??
+```
 
+The body sends `00 00 00 00` during these packets, which probably implies the body reads a 'data ready' field from the lens?
+
+Maybe something like this (low confidence)?
+
+```
+tx 00 00 0c ??       body asks for ring/aperture-index state
+rx 00 XX 0c ??       lens reports ring/aperture ordinal or changed-position value
+tx/rx n 00 8c ??     tagged transport/status wrapper for that exchange
+rx n 00 80 ??        final status/result acknowledgement
+```
+
+If I encoded a hypothetical index to each accessible f-stop position on the control ring (and retrospectively 1-index it):
+
+```
+01 = f/2.8
+02 = f/3.2
+03 = f/3.6
+04 = f/4
+05 = f/4.5
+06 = f/5
+07 = f/5.6
+08 = f/6.4
+09 = f/7.1
+0a = f/8
+0b = f/9
+0c = f/10
+0d = f/11
+0e = f/13
+0f = f/14
+10 = f/16
+11 = f/18
+12 = f/20
+13 = f/22
+14 = f/26
+15 = f/29
+16 = f/32
+```
+
+This seems to be validated with actual sniffed f-stop tests:
+
+```
+f2.8 -> f3.2   rx 00 02 0c 32
+f3.2 -> f3.6   rx 00 03 0c 12
+f3.6 -> f4.0   rx 00 04 0c 34
+...
+f29 -> f32     rx 00 16 0c 06
+```
+
+> This raises the question about the range of accessible f-stops on the control dial for faster/slower lenses
+>
+> Surely there are lenses in the GF ecosystem with more/fewer configurable apertures?
+
+Now there's a known packet behaviour `00 XX 0c YY`, poking at the relationship to the CRC byte is possibly an option?
+
+Sorting/filtering the packets out,
+
+```
+XX=02 -> YY=32
+XX=03 -> YY=12
+XX=04 -> YY=34
+XX=05 -> YY=14
+...
+XX=16 -> YY=06
+
+if XX is odd:
+    YY = (XX + 0x0f) & 0x3f
+else:
+    YY = (XX + 0x30) & 0x3f
+```
+
+This might be reaching though.
+
+Things to test next:
+
+- If the control ring value is sent frequently or on event
+- Does the `A` and `C` setting on the ring correspond to additional values or some other packet?
+- How it behaves with shutter/half-press behaviour (sent each time or cached?)
+- How fast movements are streamed out
