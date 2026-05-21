@@ -36,6 +36,10 @@ The body mount has a thin (0.3 mm) stainless shim with bent metal tabs to provid
 
 As a general note, it's probably cheaper to cannibalise the mounts from first party extension tubes, than it would be to send a pair for CNC machining due to the complicated geometry.
 
+> When I 3D printed these they mounted fine, but the tolerances were a bit tight for brass machined mounts.
+>
+> Might be worth spot-checking some of the critical diameters again to better understand expected tolerances 
+
 ## Electrical Contacts
 
 The contacts are also provided as a reference drawing, and in DXF format suitable for use with PCB design software to create custom pin array boards.

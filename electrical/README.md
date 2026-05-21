@@ -190,7 +190,7 @@ GFX 50R with GF 45mm f2.8 via MCEX-45G.
 - Logic level. Normally high.
 - No obvious pattern, but is mostly likely related to AF lens motor activation.
 
-![P7-FOCUS](/home/scott/projects/fuji-g-mount/electrical/scope-traces/P7-FOCUS.png)
+![P7-FOCUS](./scope-traces/P7-FOCUS.png)
 
 ## Pin 10
 
