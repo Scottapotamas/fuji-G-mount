@@ -388,3 +388,43 @@ In the captures where the manual focus mode was active and the motor would move,
 Extracting the values with timestamps and then plotting them and a running sum, gives convincing results.
 
 ![focus-ring-ccw-continuous-turns](images/focus-ring-ccw-continuous-turns.png)![focus-ring-af-cw-ccw-alternating-medium](images/focus-ring-af-cw-ccw-alternating-medium.png)
+
+## Focus Motor Drive
+
+Two digital lines (in captures CH1 and CH2) correlate to the focus behaviour, so inferring their purpose and correlation to data from these captures should also be doable.
+
+Just before the CH2 low-going pulse occurs a packet from the body of the shape `02 00 15 ??` is sent to the lens, which the lens responds with/ACKs. The value seems to correlate to the low-pulse duration which probably represents an absolute focus target?
+
+> I also see the camera send `00 00 3f c6`, so it might be more than iris closure, or it's sent even if the lens is wide-open?
+
+In the slower AF captures (low light) there are fewer and longer CH2 pulses.
+
+Like the focus ring, the `ss ss` appears to be a big-endian 16-bit position value that makes sense:
+
+```
+ff d9 15 8c -> -39    near infinity?
+ff f2 15 86 -> -14
+00 0a 15 a2 -> 10
+02 4c 15 b6 -> 588
+04 a2 15 9e -> 1186
+04 d3 15 b0 -> 1235   close focus
+```
+
+There is also a packet from the lens `rx ss ss 08 cc` after CH2 returns high which might be lens feedback for completion or actual position. 
+
+Rough sequence:
+
+```
+tx ss ss 15 cc       body requests focus target/step endpoint
+...
+tx 00 00 3f c6       execute/sync movement
+CH2 low              motor movement window
+...
+rx ss ss 08 cc       lens reports reached/settled focus position
+```
+
+Plotting the values for the captures looks fairly reasonable.
+
+![focus-af-targeta-run2](images/focus-af-targeta-run2.png)
+
+![focus-af-targetb-slow-run2](images/focus-af-targetb-slow-run2.png)

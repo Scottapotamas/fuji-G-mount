@@ -42,9 +42,7 @@ Autofocus drive behaviour is in a series of captures following the scheme `focus
 - `B` runs are in the approx end of the focus scale, also with the macro adapter.
 - The two runs named `focus-af-targetB-slow-run` 1 and 2, there was nearly no light on the target so the autofocus had to hunt much slower to achieve a lock.
 
-
-
-
+These tests were all done at wide-open f2.8 to try and keep iris change behaviour out of it.
 
 ### Notes
 
