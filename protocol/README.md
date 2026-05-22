@@ -320,6 +320,10 @@ f29 -> f32     rx 00 16 0c 06
 >
 > Surely there are lenses in the GF ecosystem with more/fewer configurable apertures?
 
+![iris-ring-sweeps-combined](images/iris-ring-sweeps-combined.png)
+
+
+
 Now there's a known packet behaviour `00 XX 0c YY`, poking at the relationship to the CRC byte is possibly an option?
 
 Sorting/filtering the packets out,
@@ -346,3 +350,41 @@ Things to test next:
 - Does the `A` and `C` setting on the ring correspond to additional values or some other packet?
 - How it behaves with shutter/half-press behaviour (sent each time or cached?)
 - How fast movements are streamed out
+
+## Focus Control Ring
+
+The focus ring is also fly-by-wire. Because the ring isn't marked and is free to rotate infinitely, there's no easy way to capture known step values.
+
+So a handful of captures were done to cover a range of possible packet scenarios in both manual focus mode (lens motor activates on turn), and autofocus mode where the ring isn't typically used.
+
+- Captures with small, longer, and >revolution movements made continuously in each direction
+- Captured back and forth movements, expecting to see a rough sine/triangle position trace 
+
+After looking through the captures for unique/different packets, a packet from the lens seems to be a viable candidate for a big-endian 16-bit value:
+
+```
+rx 00 01 0c 92    +1
+rx 00 04 0c b6    +4
+rx 00 08 0c ba    +8
+
+rx ff ff 0c 8c    -1
+rx ff fb 0c 88    -5
+rx ff f8 0c a6    -8
+```
+
+Clockwise captures are positive values, counterclockwise are negative. They seem to be relative values, not absolute position as they were larger in the 'fast' captures, and aren't published/polled at a different rate.
+
+The body seems to queries the value with `00 00 0c b2`, and the lens responds two transactions later.
+
+```
+tx 00 00 0c b2       body asks for ring-motion state
+...
+tx 00 00 00 00
+rx ss ss 0c cc       lens reports signed relative value
+```
+
+In the captures where the manual focus mode was active and the motor would move, we see additional `0x15` packets which I'll look into/document in their own section.
+
+Extracting the values with timestamps and then plotting them and a running sum, gives convincing results.
+
+![focus-ring-ccw-continuous-turns](images/focus-ring-ccw-continuous-turns.png)![focus-ring-af-cw-ccw-alternating-medium](images/focus-ring-af-cw-ccw-alternating-medium.png)
