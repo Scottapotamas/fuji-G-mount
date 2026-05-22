@@ -30,6 +30,20 @@ When the camera is in manual focus mode, moving the focus control ring causes mo
 
 
 
+## Focus Motor
+
+A series of captures made in manual focus mode manually moving the ring small increments to cover the focus range, `focus-throw-small-spaced-moves-from-inf-to-min.sal` and a min-to-inf capture.
+
+`focus-throw-large-alternating.sal` is a larger movement back and forth in the approx middle of the range.
+
+Autofocus drive behaviour is in a series of captures following the scheme `focus-af-targetx-runY.sal` where X is a unique focus target that we start at and successfully focus on, and Y is the n-th repetition of the test. This is because the AF search sometimes hunts differently.
+
+- `A` runs are on the 'long' end of the focus scale, between 10m and inf but the macro adapter is in-use so these distances aren't useful.
+- `B` runs are in the approx end of the focus scale, also with the macro adapter.
+- The two runs named `focus-af-targetB-slow-run` 1 and 2, there was nearly no light on the target so the autofocus had to hunt much slower to achieve a lock.
+
+
+
 
 
 ### Notes
