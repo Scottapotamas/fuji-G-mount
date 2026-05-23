@@ -40,13 +40,18 @@ Several active (3rd party) lens adaptors *are* on the market, allowing smart con
 - [x] Map the electrical connections between the body and lens, create rough specs for power rails, determine the style of communication and electrical implementation(s) in use. Refer [`/electrical`](/electrical).
 - [x] Assuming no strange electrical interfaces are used, connect the logic analyser/scope and build out a corpus of messages sent between the lens and body.
   - Refer [`/protocol`](/protocol) for notes.
+  - Capture control ring, iris closure, focus motor on GF110 to compare against 45mm findings.
+- [ ] Write a basic library implementation with unit tests against captured packets
+   - [ ] Connect a micro running the library in real-time to the body, see what works/doesn't.
+   - [ ] Connect micro to lens, see if setting iris or focus is possible
+
 
 ## What have we learnt
 
 - Enough to successfully make a [GF mount adapter for the Fuji MK series S35 cine-zooms](https://github.com/Scottapotamas/fuji-mk-zoom-to-GF-mount).
+- Protocol behaviour for a subset of packets: 
+  - Aperture index and relative focus ring rotations sent from the lens to the camera
+  - Closing the iris
+  - Commanding absolute focus motor position
+  - Some hazy details on the packet shapes
 
-## Current Tooling
-
-Fresh protocol capture tooling lives in [`tools/`](tools/). It keeps hardware capture, cleaned observation data, and later protocol interpretation separate.
-
-The old `exploration/` folder is historical context only; do not treat its packet classifications or analysis notes as established protocol facts.

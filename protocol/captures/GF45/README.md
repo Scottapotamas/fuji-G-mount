@@ -1,8 +1,10 @@
 # Saleae Logic Captures
 
-These are from several capture sessions.
+These are from several capture sessions with GF45mm f2.8 and GFX50R using extension tube for sniffing.
 
 ### Aperture Control
+
+The GF45mm F2.8 control ring has third-stop increments from f2.8 to f32.
 
 For iris captures, labelled using the `f4.0-f5.6.sal` style scheme as attempts to capture a full command and lens iris change:
 
@@ -45,5 +47,8 @@ Autofocus drive behaviour is in a series of captures following the scheme `focus
 These tests were all done at wide-open f2.8 to try and keep iris change behaviour out of it.
 
 ### Notes
+
+`idle-13sec.sal` is captured with the same channel config as the iris/focus captures. The camera was configured in AF mode, lens was on F2. Screen was on, no user interaction before/during the capture.
+
 
 Other captures are from a prior session and are annotated where relevant.

@@ -314,23 +314,34 @@ f29 -> f32     rx 00 16 0c 06
 
 Now there's a known packet behaviour `00 XX 0c YY`, poking at the relationship to the CRC byte is possibly an option?
 
-Sorting/filtering the packets out,
+A full observation example set:
 
 ```
-XX=02 -> YY=32
-XX=03 -> YY=12
-XX=04 -> YY=34
-XX=05 -> YY=14
-...
-XX=16 -> YY=06
-
-if XX is odd:
-    YY = (XX + 0x0f) & 0x3f
-else:
-    YY = (XX + 0x30) & 0x3f
+00 01 0c 10
+00 02 0c 32
+00 03 0c 12
+00 04 0c 34
+00 05 0c 14
+00 06 0c 36
+00 07 0c 16
+00 08 0c 38
+00 09 0c 18
+00 0a 0c 3a
+00 0b 0c 1a
+00 0c 0c 3c
+00 0d 0c 1c
+00 0e 0c 3e
+00 0f 0c 1e
+00 10 0c 00
+00 11 0c 20
+00 12 0c 02
+00 13 0c 22
+00 14 0c 04
+00 15 0c 24
+00 16 0c 06
 ```
 
-This might be reaching though.
+
 
 Things to test next:
 
@@ -376,6 +387,32 @@ In the captures where the manual focus mode was active and the motor would move,
 Extracting the values with timestamps and then plotting them and a running sum, gives convincing results.
 
 ![focus-ring-ccw-continuous-turns](images/focus-ring-ccw-continuous-turns.png)![focus-ring-af-cw-ccw-alternating-medium](images/focus-ring-af-cw-ccw-alternating-medium.png)
+
+Example packets that are useful for comparison:
+
+```
+# autofocus/non-actuating, clockwise continuous turns
+rx 00 01 0c 92
+rx 00 02 0c b4
+rx 00 04 0c b6
+rx 00 08 0c ba
+
+# autofocus/non-actuating, counter-clockwise turns
+rx ff ff 0c 8c
+rx ff fd 0c 8a
+rx ff fb 0c 88
+rx ff f6 0c a4
+
+# manual-focus/actuating, alternating direction
+rx 00 04 0c b6
+rx 00 03 0c 94
+rx 00 05 0c 96
+rx ff ff 0c 8c
+rx ff fd 0c 8a
+rx ff fb 0c 88
+rx 00 06 0c b8
+rx 00 07 0c 98
+```
 
 ## Focus Motor Drive
 
@@ -433,16 +470,49 @@ If we re-arrange the packet from 'wire order' into a reversed 'logical order' wh
 
 It's probably not wise to analyse against that shape though.
 
-## Checksum/Signature Byte
+## Header/Status Byte
 
-Using all the captured packets, de-duplicating and then sorting on command byte and payload to find different checksum bytes for the same packet.
+Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's a little better understood as a bitfield/structure with some stateful information.
+
+Using all the captured packets, de-duplicating and then sorting on 'command byte' and payload to find different header bytes for the same packet.
 
 - Also filtered out all 'readout' packets that are an artifact of the SPI behaviour `00 00 00 00`.
-- Assuming packets from the body and lens use the same checksum behaviour, but the corpus tracks which device/trace the packets are seen in.
+- Assuming packets from the body and lens use the same behaviour, but the corpus tracks which device/trace the packets are seen in.
 
-Looking over the headers, there were some under-represented bits on repeated packets that I'd expect if it were a proper CRC with included counter. It's possible that there's either a CRC or signature only using the lower 6 bits of the 'header' byte.
+Looking over the headers, there were some under-represented bits on repeated packets that I'd expect if it were a CRC or a counter. 
 
-For some examples to demonstrate the idea,
+**Bit 0 is always low.** This seems to hold for *all* transactions I've captured (89,984 at time of observation). 
+
+Looking at the most represented packets with different final bytes:
+
+| Direction   | Payload    | Observations | Trailers         |
+| ----------- | ---------- | -----------: | ---------------- |
+| `camera_rx` | `08 00 88` |         9180 | `32`, `74`, `b4` |
+| `camera_tx` | `08 00 88` |         6894 | `32`, `74`, `b4` |
+| `camera_tx` | `00 00 09` |         3439 | `a6`, `e8`       |
+| `camera_tx` | `00 00 0c` |          819 | `30`, `b2`       |
+
+Luckily,  `09 00 88`  shows that **rx and tx directions can have the same final byte for an identical payload** it's less likely there's a 'camera' or 'lens' style send/recv bit in the field. This also means it's less likely that both sides are maintaining some shared incremental packet count.
+
+Looking at behaviour around 'most understood' packets for iris and focus: 
+
+| Direction/CMD | Prefix     | Trailers   |
+| ------------- | ---------- | ---------- |
+| RX `0x0c`     | `00 02 0c` | `b4`, `32` |
+| RX `0x0c`     | `00 03 0c` | `94`, `12` |
+| TX `0x0c`     | `00 00 0c` | `b2`, `30` |
+| RX/TX `0x15`  | `01 f4 15` | `18`, `9a` |
+| RX/TX `0x15`  | `03 6b 15` | `3a`, `bc` |
+| RX/TX `0x15`  | `01 23 15` | `62`, `a2` |
+
+The focus and iris settings use the same `0c` command byte, but when looking at the **top two bits** of the last byte, 
+
+- Iris `0x0c` packets are always(?) `upper = 0` across 100+ examples.
+- Focus ring `0x0c` packets are always(?) `upper = 2` across 600+ examples.
+- For focus motor `0x15` packets, the upper bits evenly distribute with `00`/`01`/`10` but never `11`. 
+- Execute/sync commands are `11`.
+
+It's possible that there's either a CRC or signature only using the lower 5/6 bits of the 'header' byte? For some examples to demonstrate the idea:
 
 ```
 000008 is seen with final bytes of 20, 62, a2
@@ -456,9 +526,25 @@ For some examples to demonstrate the idea,
 0xaa: upper=2, sig=0x2a
 ```
 
+This still isn't all that stable, so need to find different layout concepts. Also haven't looked into the concept of a parity bit yet.
 
+```
+b3 bit 0     = always 0
+b3 bits 1..5 = family-specific count, status, check signature/sum, maybe a value/payload?
+b3 bits 6..7 = role/state/feature, not globally independent
+```
 
+So the main work will be figuring out what relationship the bits `1..5` have with the payload.
 
+### Possible Relationships
 
+Looking at the lens control packets, `00 XX 0c YY` there are some possible options that seem to hold up in the existing dataset:
 
+```
+if (XX & 1)
+    YY_low6 = (XX + 0x0f) & 0x3E;
+else
+    YY_low6 = (XX + 0x30) & 0x3E;
+```
 
+> The bit0 = 0 is masked out
