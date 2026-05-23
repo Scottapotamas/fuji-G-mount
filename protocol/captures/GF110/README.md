@@ -24,6 +24,12 @@ For just the command ring *without dof preview* enabled there is no triggerable 
 
 > It was a little unclear in some tests if the camera was changing iris value immediately after a ring rotation, sometimes it would wait and I think the viewfinder brightness adjustment was easing between steps?
 
+The lenses also have a `A` for auto-aperture, and `C` for custom setting where the body wheel can be used to set it. I included captures of these. There is no dof preview available in `A` mode. Auto picked f2, and the custom value was f4, so iris actuation and ring settings will be in the same capture.  
+
+Additional captures in custom mode using the body shutter control ring with dof-preview enabled are `custom-aperture-*`.
+
+A capture in auto mode `auto-aperture-dark-to-bright` has the camera starting at f2 due to darker room, and I brought my phone torch in front and then away from the lens. Could hear the lens stopping down, and the f-stop indicated on the camera display changed as it tried to auto-expose. Camera was in fixed shutter-speed and fixed ISO during this test.
+
 ### Focus Control
 
 When the camera is in autofocus mode, there is no visible change to the camera or lens when the focus ring is rotated. These captures are `focus-ring-...`, with varying distance and speeds, in both directions.

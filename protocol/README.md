@@ -4,13 +4,11 @@ Sniffing of the communications between the body and lens is achieved with a modi
 
 ### Logic Analyser Captures
 
-Useful trace files are committed to the `captures` folder.
+Useful trace files are committed to the `captures` folder. Most analysis was done against the GF45 dumps, with later checks against the GF110.
 
 These files require Saleae's Logic 2 tool for viewing. It's freely available for download on their website [here](https://www.saleae.com/downloads/).
 
 Specific packets or sections of interest are converted into a more digestible form and are saved in `/packet-captures` as hex encoded binary files.
-
-
 
 # SPI Communication
 
@@ -267,7 +265,7 @@ tx/rx n 00 8c ??     tagged transport/status wrapper for that exchange
 rx n 00 80 ??        final status/result acknowledgement
 ```
 
-If I encoded a hypothetical index to each accessible f-stop position on the control ring (and retrospectively 1-index it):
+If I encoded a hypothetical index to each accessible f-stop position on the GF45mm control ring (and retrospectively 1-index it):
 
 ```
 01 = f/2.8
@@ -304,13 +302,15 @@ f3.6 -> f4.0   rx 00 04 0c 34
 f29 -> f32     rx 00 16 0c 06
 ```
 
-> This raises the question about the range of accessible f-stops on the control dial for faster/slower lenses
+> ~~This raises the question about the range of accessible f-stops on the control dial for faster/slower lenses~~
+>
+> Update: On the GF110mm which has f2.0 to f22 range, there's the same number of third-stops over the range, they map against index the same way. 
 >
 > Surely there are lenses in the GF ecosystem with more/fewer configurable apertures?
 
-![iris-ring-sweeps-combined](images/iris-ring-sweeps-combined.png)
+![45mm lens iris against index value, increases in clear steps over time during sweep capture](images/iris-ring-sweeps-combined.png)
 
-
+![110mm lens iris against index value, increases in clear steps over time during sweep capture](images/110mm-iris-ring-sweeps-combined.png)
 
 Now there's a known packet behaviour `00 XX 0c YY`, poking at the relationship to the CRC byte is possibly an option?
 
@@ -341,14 +341,17 @@ A full observation example set:
 00 16 0c 06
 ```
 
+The lenses also have a `A` automatic mode selection position and a `C` custom position for camera-side control over the aperture. I forgot to capture these with the GF45, but did with GF110.
+
+When entering AUTO, a 'new' `00 00 0c 30` packet was visible on the transition.
+
+There wasn't a visible change when clicking the ring to custom mode (camera showed f4). There was a notable change of `00 80 08 24` packets to `08 80 08 26` though?
+
 
 
 Things to test next:
 
-- If the control ring value is sent frequently or on event
-- Does the `A` and `C` setting on the ring correspond to additional values or some other packet?
 - How it behaves with shutter/half-press behaviour (sent each time or cached?)
-- How fast movements are streamed out
 
 ## Focus Control Ring
 
@@ -373,7 +376,9 @@ rx ff f8 0c a6    -8
 
 Clockwise captures are positive values, counterclockwise are negative. They seem to be relative values, not absolute position as they were larger in the 'fast' captures, and aren't published/polled at a different rate.
 
-The body seems to queries the value with `00 00 0c b2`, and the lens responds two transactions later.
+The behaviour appears the same on the GF45 and GF110mm lenses, even though the GF110 has a much longer throw.
+
+The body seems to query the value with `00 00 0c b2`, and the lens responds two transactions later.
 
 ```
 tx 00 00 0c b2       body asks for ring-motion state
@@ -424,7 +429,7 @@ Just before the CH2 low-going pulse occurs a packet from the body of the shape `
 
 In the slower AF captures (low light) there are fewer and longer CH2 pulses.
 
-Like the focus ring, the `ss ss` appears to be a big-endian 16-bit position value that makes sense:
+Like the focus ring, the `ss ss` appears to be a big-endian 16-bit position value that makes sense. On the GF45mm:
 
 ```
 ff d9 15 8c -> -39    near infinity?
@@ -435,7 +440,9 @@ ff f2 15 86 -> -14
 04 d3 15 b0 -> 1235   close focus
 ```
 
-There is also a packet from the lens `rx ss ss 08 cc` after CH2 returns high which might be lens feedback for completion or actual position. 
+There is also a packet from the lens `rx ss ss 08 cc` after CH2 returns high which looks like lens feedback for completion or actual position.
+
+The feedback value is often `32767` which is `2^15 - 1` and would probably be the end of the encoder's range. If that value is seen we'd treat it as a sentinel/health update but probably not a valid position.
 
 Rough sequence:
 
@@ -448,13 +455,20 @@ CH2 low              motor movement window
 rx ss ss 08 cc       lens reports reached/settled focus position
 ```
 
-Plotting the values for the captures looks fairly reasonable.
+Plotting the values for the captures using GF45 looks fairly reasonable.
 
 ![focus-af-targeta-run2](images/focus-af-targeta-run2.png)
 
 ![focus-af-targetb-slow-run2](images/focus-af-targetb-slow-run2.png)
 
 It seems the value that's decoded when the line isn't high is the same flat value and doesn't correlate to anything?
+
+The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much finer focus control available. This is backed up by focus sweep captures showing ~17x larger span of values:
+
+| Lens  | Motor command | Width        | Resolution | Feedback range | Width        | Resolution |
+| ----- | ------------- | ------------ | ---------- | -------------- | ------------ | ---------- |
+| GF110 | -927 .. 22638 | 23565 counts | ~14.5 bits | -845 .. 22638  | 23483 counts | ~14.5 bits |
+| GF45  | -163 .. 1235  | 1398 counts  | ~10.5 bits | -162 .. 1235   | 1397 counts  | ~10.5 bits |
 
 
 
