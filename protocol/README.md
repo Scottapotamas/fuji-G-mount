@@ -556,7 +556,23 @@ The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much f
 
 > This is entirely speculative at this point.
 
-Throughout the docs I've been treating the obviously unstable last byte as some kind of checksum byte.
+Throughout the docs I've been treating the obviously unstable last byte as some kind of checksum byte, but it's increasingly likely that it's a structure/bitfield with important meaning to the underlying behaviour.
+
+### Acknowledgement
+
+The command byte (third byte sent over the wire) seems to include an 'ack' flag at bit 7, i.e. `cmd | 0x80`, demonstrated on most currently known packets between tx and rx:
+
+``` 
+0x08 -> 0x88
+0x09 -> 0x89
+0x0c -> 0x8c
+0x0f -> 0x8f
+0x15 -> 0x95
+0x18 -> 0x98
+0x3f -> 0xbf
+```
+
+### Wire/Logical Order
 
 In the focus ring and command packets the 16-bit value appears to be big-endian formatted in the first two bytes, followed by the command byte. It's not uncommon to see BE for wire-formats, but LE is more common on most architectures. It's also more logically common to see the 'address' or 'type' fields before payload fields in most protocols.
 
