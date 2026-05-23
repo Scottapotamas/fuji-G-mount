@@ -44,21 +44,9 @@ As with typical SPI busses working with bidirectional transfers, there a fairly 
 
 
 
-## Packet Structure
+# Packet Exploration
 
-The last byte appears to be a checksum
-
-## Checksum
-
-
-
-
-
-
-
-# Packet Analysis
-
-
+This is mostly done manually from packet captures of specific actions. Refer to the `/protocol/captures/` folder for the raw captures and descriptions of the setups.
 
 ## 'Idle' Packets
 
@@ -393,7 +381,7 @@ Extracting the values with timestamps and then plotting them and a running sum, 
 
 Two digital lines (in captures CH1 and CH2) correlate to the focus behaviour, so inferring their purpose and correlation to data from these captures should also be doable.
 
-Just before the CH2 low-going pulse occurs a packet from the body of the shape `02 00 15 ??` is sent to the lens, which the lens responds with/ACKs. The value seems to correlate to the low-pulse duration which probably represents an absolute focus target?
+Just before the CH2 low-going pulse occurs a packet from the body of the shape `02 00 15 ??` is sent to the lens, which the lens responds/ACKs. The value seems to correlate to the low-pulse duration which probably represents an absolute focus target?
 
 > I also see the camera send `00 00 3f c6`, so it might be more than iris closure, or it's sent even if the lens is wide-open?
 
@@ -428,3 +416,49 @@ Plotting the values for the captures looks fairly reasonable.
 ![focus-af-targeta-run2](images/focus-af-targeta-run2.png)
 
 ![focus-af-targetb-slow-run2](images/focus-af-targetb-slow-run2.png)
+
+It seems the value that's decoded when the line isn't high is the same flat value and doesn't correlate to anything?
+
+
+
+## Packet Structure
+
+> This is entirely speculative at this point.
+
+Throughout the docs I've been treating the obviously unstable last byte as some kind of checksum byte.
+
+In the focus ring and command packets the 16-bit value appears to be big-endian formatted in the first two bytes, followed by the command byte. It's not uncommon to see BE for wire-formats, but LE is more common on most architectures. It's also more logically common to see the 'address' or 'type' fields before payload fields in most protocols.
+
+If we re-arrange the packet from 'wire order' into a reversed 'logical order' where captured wire order `04 d3 15 b0` is represented as `b0 15 d3 04` then we can consider the packet as a more normal `header command payload payload` with LE encoded payload.
+
+It's probably not wise to analyse against that shape though.
+
+## Checksum/Signature Byte
+
+Using all the captured packets, de-duplicating and then sorting on command byte and payload to find different checksum bytes for the same packet.
+
+- Also filtered out all 'readout' packets that are an artifact of the SPI behaviour `00 00 00 00`.
+- Assuming packets from the body and lens use the same checksum behaviour, but the corpus tracks which device/trace the packets are seen in.
+
+Looking over the headers, there were some under-represented bits on repeated packets that I'd expect if it were a proper CRC with included counter. It's possible that there's either a CRC or signature only using the lower 6 bits of the 'header' byte.
+
+For some examples to demonstrate the idea,
+
+```
+000008 is seen with final bytes of 20, 62, a2
+0x20: upper=0, sig=0x20
+0x62: upper=1, sig=0x22
+0xa2: upper=2, sig=0x22
+
+080095 seen with 28, 6a, aa
+0x28: upper=0, sig=0x28
+0x6a: upper=1, sig=0x2a
+0xaa: upper=2, sig=0x2a
+```
+
+
+
+
+
+
+
