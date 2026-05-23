@@ -171,74 +171,15 @@ These transactions are from the body to the lens and **describe the body.**
 
 
 
-## Iris Packets
-
-- What happens when the iris ring is rotated
-- What happens when the camera wants to close the iris for exposure or photos
-
-Starts when a packet we don't recognise prior to iris event `LOW` is found (manually).
-
-The iris event was 275ms long.
-
-Preceded by a standard set of IDLE 6-burst transmissions (coincidence or intentional?).
-
-#### Packet 1 
-
-Camera: `0x12 0x40 0x18 0xBA`
-
-Lens: -
-
-#### Packet 2
-
-Camera: `0x09 0x10 0x80 0x2A`
-
-Lens: `0x08 0x00 0x98 0xB6`
-
-#### Packet 3
-
-Camera:  `0x00 0x00 0x3F 0xC6` 
-
-Lens: `0x12 0x40 0x18 0xBA`
-
-##### Packet 4
-
-Camera: `0x0A 0x00 0x98 0x86`
-
-Lens: `0x09 0x00 0xBF 0xE0`
-
-Iris line goes low
-
-##### Packet 5
-
-Camera:  `0x00 0x00 0x00 0x00`
-
-Lens:  `0x00 0x00 0x3F 0xC6`
-
-##### Packet 6
-
-Camera:  `0x08 0x00 0xBF 0xD8`
-
-Lens:  `0x0A 0x00 0x80 0x22`
-
-##### Waiting
-
-40ms gap starts, followed by idle packets at normal interval
-
-`IDLE4` ` IDLE4` `IDLE6` `IDLE4` ` IDLE4` `IDLE6` 
-
-Then iris line returns to `HIGH`.
-
 ## Iris Close Command
 
-From the larger/recent dump of iris closures, the packet `00 00 3f c6` is found just before the iris closes in all cases. There's always another packet which has the lens responding, `n 00 bf ??` i.e. `0B 00 BF F0` immediately before the falling edge on the iris status IO.
+From the larger/recent dump of iris closures, the packet `00 00 3f c6` is found just before the iris closes in all cases. There's always another packet which has the lens responding, `n 00 bf ??` i.e. `0b 00 bf f0` immediately before the falling edge on the iris status IO.
 
 This behaviour doesn't occur when the control ring is rotated without dof preview on.
 
-It's unclear right now if that's a body/lens synchronisation or “prepare/execute stop-down” command.
+Given it's always the same, and the lens echoes it, I think it's treated more like 'execute' or 'sync', with the actual command value staged beforehand.
 
 I also noticed that the iris IO line negative pulse that occurs when stopping down/up takes an increasing amount of time based on the 'stop distance' in the transition. I suspect this signal might indicate 'iris OK' or similar. 
-
-
 
 ## Aperture Control Ring
 
@@ -349,9 +290,148 @@ There wasn't a visible change when clicking the ring to custom mode (camera show
 
 
 
-Things to test next:
+## Iris Setting Drive
 
-- How it behaves with shutter/half-press behaviour (sent each time or cached?)
+While reading the ring value is well understood, requesting a particular aperture setting on the lens from the body isn't as clear right now (I mentally overloaded that behaviour with the `0c` iris ring packets).
+
+Controlling the aperture blades without changing the control ring on the lens is doable with auto mode (and forcing auto-exposure to stop down/up) and in 'custom' mode where the body ring controls the f-stop target (with dof-preview active to force it).
+
+The concept is proven quickly as there's no `00 xx 0c cc` 'ring index' packets in the GF110 auto/custom captures but there are `00 00 3f c6` execute commands and the falling edge on the iris IO. There are two different/new commands that I could find correlated to the falling edges:
+
+- `0x15` 'staging' commands, seen in GF110 `custom-aperture-sweep-closed`
+  - Seemingly acknowledged with `0x95`/`0xbf`
+  - Lines up with immediate iris IO falling edges (within 3ms) in the GF110 CUSTOM/numeric captures.
+  - The `0x18` commands are not near the edge.
+- `0x18` staged commands, seen in GF110 `auto-aperture-dark-to-bright-to-dark` without `0x15` commands.
+  - Acknowledged through the `0x98`/`0xbf`, sharing the same execute command.
+  - Lines up with most of the GF45 iris edges as well.
+
+The sequence is typically
+
+```
+tx <staged command>     0x15 or 0x18 family, likely carries target/move information
+tx idle/status wrapper  n 10 80 / n 00 95 / n 00 98 path depending on family
+tx 00 00 3f c6          execute/latch
+rx <staged command>     lens echo of the staged command
+tx n 00 95/98 ??        family-specific acknowledgement
+rx n 00 bf ??           execute response
+rx 00 00 3f c6          lens echo of execute shortly after the edge/handshake
+```
+
+The aperture setpoint seems to be encoded inside the `0x18` command and is acked by the lens.
+
+```
+tx AA BB 18 CC
+tx 00 00 3f c6
+rx AA BB 18 CC
+```
+
+The values in captures are somewhat tied to third-stop increments due to the camera not allowing finer settings, but the pattern looks common to both lenses and is familiar to the control ring indexing:
+
+```
+10 00 18 a8 -> index 1
+10 40 18 aa -> index 2
+10 80 18 ac -> index 3
+10 c0 18 ae -> index 4
+11 00 18 b0 -> index 5
+...
+15 40 18 92 -> index 22
+```
+
+Where the GF45 index 1 = f/2.8 and 22 = f/32, and the GF110 index 1 = f/2.0, index 22 = f/22.
+
+Numerically, the encoding could be described as:
+```
+index = ((BE16(AA BB) - 0x1000) / 0x40) + 1
+```
+
+> When a custom controller can drive the lens, it might be worth seeing if the iris supports finer setpoint resolution?
+>
+> Do any of the x-mount lenses/bodies have clickless iris or finer selection controls?
+
+
+
+For the other field `0x15 I've not yet found out what it does. Examples from GF110 captures:
+
+```
+48 54 15 80
+48 58 15 84
+48 5f 15 aa
+48 61 15 ac
+48 78 15 a4
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+> Old notes below
+
+There's a burst of packets before the iris line goes low.
+
+Starts when a packet we don't recognise prior to iris event `LOW` is found (manually).
+
+The iris event was 275ms long.
+
+Preceded by a standard set of IDLE 6-burst transmissions (coincidence or intentional?).
+
+**Packet 1** 
+
+Camera: `0x12 0x40 0x18 0xBA`
+
+Lens: -
+
+**Packet 2**
+
+Camera: `0x09 0x10 0x80 0x2A`
+
+Lens: `0x08 0x00 0x98 0xB6`
+
+**Packet 3**
+
+Camera:  `0x00 0x00 0x3F 0xC6` 
+
+Lens: `0x12 0x40 0x18 0xBA`
+
+**Packet 4**
+
+Camera: `0x0A 0x00 0x98 0x86`
+
+Lens: `0x09 0x00 0xBF 0xE0`
+
+Iris line goes low
+
+**Packet 5**
+
+Camera:  `0x00 0x00 0x00 0x00`
+
+Lens:  `0x00 0x00 0x3F 0xC6`
+
+**Packet 6**
+
+Camera:  `0x08 0x00 0xBF 0xD8`
+
+Lens:  `0x0A 0x00 0x80 0x22`
+
+**Waiting**
+
+40ms gap starts, followed by idle packets at normal interval
+
+`IDLE4` ` IDLE4` `IDLE6` `IDLE4` ` IDLE4` `IDLE6` 
+
+Then iris line returns to `HIGH`.
+
+
 
 ## Focus Control Ring
 
