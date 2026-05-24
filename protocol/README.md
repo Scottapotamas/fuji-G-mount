@@ -79,6 +79,30 @@ For both the 4 and 6 packet bursts, the first bytes marked as `0x??` seem to var
 The final bytes marked `0x??` are most likely a CRC, but it's not clear yet.
 
 
+
+> Newer analysis pass from GF110 idle capture
+
+
+
+
+| Count | Lens | Burst length | Kind | Signature |
+| ---: | --- | ---: | --- | --- |
+| 164 | `GF110` | 4 | `masked` | `00 00 08 ??/- | n 10 80 ??/n 00 88 ?? | -/00 80 08 ?? | n 00 88 ??/n 00 80 ??` |
+| 83 | `GF110` | 6 | `masked` | `00 00 08 ??/- | n 10 80 ??/n 00 88 ?? | 00 00 09 ??/00 80 08 ?? | n 00 88 ??/n 00 89 ?? | -/00 12 09 ?? | n 00 89 ??/n 00 80 ??` |
+| 42 | `GF110` | 6 | `exact` | `00 00 08 20/- | 08 10 80 22/08 00 88 32 | 00 00 09 a6/00 80 08 24 | 09 00 88 3a/08 00 89 b8 | -/00 12 09 b8 | 08 00 89 b8/09 00 80 1a` |
+| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0a 10 80 32/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0a 00 80 22` |
+| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0b 10 80 3a/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0b 00 80 2a` |
+| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0e 10 80 12/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0e 00 80 02` |
+| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0f 10 80 1a/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0f 00 80 0a` |
+| 41 | `GF110` | 6 | `exact` | `00 00 08 20/- | 0c 10 80 02/08 00 88 32 | 00 00 09 a6/00 80 08 24 | 0d 00 88 1a/0c 00 89 98 | -/00 12 09 b8 | 08 00 89 b8/0d 00 80 3a` |
+
+
+
+
+
+
+
+
 ## Identification Packets
 
 After the camera is powered on, a series of `131B` transactions occur (each sent twice 3ms apart). Both transmissions appear to have identical payloads.
@@ -552,11 +576,55 @@ The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much f
 
 
 
+## Unknown Commands
+
+Filtering and sorting for packets which are less understood. Over time these should be removed from the table into their own sections.
+
+These ones are known but didn't get classified by the filter - TODO work out why?
+
+| Count | Dir | Msg | ACK | Upper2 | Reason | Lenses | Captures | Top packets |
+| ---: | --- | --- | --- | ---: | --- | --- | ---: | --- |
+| 2804 | `rx` | `0c` | `False` | 2 | candidate | GF110,GF45 | 25 | `00 01 0c 92`, `00 02 0c b4`, `ff fe 0c ac`, `ff ff 0c 8c` |
+| 2804 | `tx` | `0c` | `False` | 2 | candidate | GF110,GF45 | 25 | `00 00 0c b2` |
+| 2683 | `rx` | `15` | `False` | 0 | candidate | GF110,GF45 | 58 | `09 c4 15 2a, 0b 3c 15 2c, 01 f4 15 18, 0d 88 15 0c` |
+| 2683 | `tx` | `15` | `False` | 0 | candidate | GF110,GF45 | 58 | `09 c4 15 2a, 0b 3c 15 2c, 01 f4 15 18, 0d 88 15 0c` |
+
+
+
+### `0x0f`
+
+| Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
+| ----: | ---- | ---- | ------- | -----: | --------- | ---------- | -------: | ---------------------------------------------------------- |
+|  2796 | `rx` | `0f` | `True`  |      3 | undecoded | GF110,GF45 |       72 | `08 00 8f d2`, `09 00 8f da`, `0d 00 8f fa`, `0b 00 8f ea` |
+|  2796 | `rx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
+|  2796 | `tx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
+|  2796 | `tx` | `0f` | `True`  |      3 | undecoded | GF110,GF45 |       72 | `08 00 8f d2`, `09 00 8f da`, `0e 00 8f c2`, `0b 00 8f ea` |
+
+### `0x08`
+
+| Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
+| ----: | ---- | ---- | ------- | -----: | --------- | ---------- | -------: | ---------------------------------------------------------- |
+| 23099 | `tx` | `08` | `False` |      0 | undecoded | GF110,GF45 |       94 | `00 00 08 20`                                              |
+| 17414 | `rx` | `08` | `False` |      0 | undecoded | GF110,GF45 |       92 | `00 00 08 20`, `00 08 08 28`, `00 88 08 2c`, `08 00 08 22` |
+|  2853 | `tx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `00 01 08 42`, `00 10 08 72`                               |
+|  2852 | `rx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `ff f5 08 72`, `fc b4 08 78`, `04 a3 08 48`, `ff d9 08 56` |
+
+### `0x09`
+
+| Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
+| ----: | ---- | ---- | ------- | -----: | --------- | ---------- | -------: | ---------------------------------------------------------- |
+|  7704 | `rx` | `09` | `False` |      2 | undecoded | GF110,GF45 |       94 | `00 13 09 98`, `00 14 09 ba`, `00 12 09 b8`, `00 15 09 9a` |
+|  7704 | `tx` | `09` | `False` |      2 | undecoded | GF110,GF45 |       94 | `00 00 09 a6`                                              |
+|  2778 | `rx` | `09` | `False` |      3 | undecoded | GF110,GF45 |       66 | `00 01 09 c8, 00 00 09 e8, 00 03 09 ca, 00 02 09 ea`       |
+|  2778 | `tx` | `09` | `False` |      3 | undecoded | GF110,GF45 |       66 | `00 00 09 e8`                                              |
+
+
+
 ## Packet Structure
 
 > This is entirely speculative at this point.
 
-Throughout the docs I've been treating the obviously unstable last byte as some kind of checksum byte, but it's increasingly likely that it's a structure/bitfield with important meaning to the underlying behaviour.
+Throughout the docs I've been treating the obviously unstable last byte as some kind of checksum byte, but it's increasingly obvious that it's a structure/bitfield with important meaning to the underlying behaviour.
 
 ### Acknowledgement
 
@@ -580,7 +648,7 @@ If we re-arrange the packet from 'wire order' into a reversed 'logical order' wh
 
 It's probably not wise to analyse against that shape though.
 
-## Header/Status Byte
+## Tail/Status Byte
 
 Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's a little better understood as a bitfield/structure with some stateful information.
 
@@ -593,68 +661,45 @@ Looking over the headers, there were some under-represented bits on repeated pac
 
 **Bit 0 is always low.** This seems to hold for *all* transactions I've captured (89,984 at time of observation). 
 
-Looking at the most represented packets with different final bytes:
-
-| Direction   | Payload    | Observations | Trailers         |
-| ----------- | ---------- | -----------: | ---------------- |
-| `camera_rx` | `08 00 88` |         9180 | `32`, `74`, `b4` |
-| `camera_tx` | `08 00 88` |         6894 | `32`, `74`, `b4` |
-| `camera_tx` | `00 00 09` |         3439 | `a6`, `e8`       |
-| `camera_tx` | `00 00 0c` |          819 | `30`, `b2`       |
-
 Luckily,  `09 00 88`  shows that **rx and tx directions can have the same final byte for an identical payload** it's less likely there's a 'camera' or 'lens' style send/recv bit in the field. This also means it's less likely that both sides are maintaining some shared incremental packet count.
-
-Looking at behaviour around 'most understood' packets for iris and focus: 
-
-| Direction/CMD | Prefix     | Trailers   |
-| ------------- | ---------- | ---------- |
-| RX `0x0c`     | `00 02 0c` | `b4`, `32` |
-| RX `0x0c`     | `00 03 0c` | `94`, `12` |
-| TX `0x0c`     | `00 00 0c` | `b2`, `30` |
-| RX/TX `0x15`  | `01 f4 15` | `18`, `9a` |
-| RX/TX `0x15`  | `03 6b 15` | `3a`, `bc` |
-| RX/TX `0x15`  | `01 23 15` | `62`, `a2` |
 
 The focus and iris settings use the same `0c` command byte, but when looking at the **top two bits** of the last byte, 
 
-- Iris `0x0c` packets are always(?) `upper = 0` across 100+ examples.
+- Iris ring `0x0c` packets are always(?) `upper = 0` across 100+ examples.
 - Focus ring `0x0c` packets are always(?) `upper = 2` across 600+ examples.
 - For focus motor `0x15` packets, the upper bits evenly distribute with `00`/`01`/`10` but never `11`. 
 - Execute/sync commands are `11`.
 
-It's possible that there's either a CRC or signature only using the lower 5/6 bits of the 'header' byte? For some examples to demonstrate the idea:
+Looking at behaviour around 'most understood' packets for iris and focus: 
 
-```
-000008 is seen with final bytes of 20, 62, a2
-0x20: upper=0, sig=0x20
-0x62: upper=1, sig=0x22
-0xa2: upper=2, sig=0x22
+| Direction | CMD    | Prefix     | Upper-2b values | Final bits 1..5 values |
+| --------- | ------ | ---------- | --------------- | ---------------------- |
+| RX        | `0x0c` | `00 02 0c` | 2, 0            | `1a`, `19`             |
+| RX        | `0x0c` | `00 03 0c` | 2, 0            | `0a`, `09`             |
+| TX        | `0x0c` | `00 00 0c` | 2, 0            | `19`, `18`             |
+| RX/TX     | `0x15` | `01 f4 15` | 0, 2            | `0c`, `0d`             |
+| RX/TX     | `0x15` | `03 6b 15` | 0, 2            | `1d`, `1e`             |
+| RX/TX     | `0x15` | `01 23 15` | 1, 2            | `11`, `11`             |
 
-080095 seen with 28, 6a, aa
-0x28: upper=0, sig=0x28
-0x6a: upper=1, sig=0x2a
-0xaa: upper=2, sig=0x2a
-```
+The table shows that with the upper bits taken into account, the remaining data in the trailing byte has one stable value.
 
-This still isn't all that stable, so need to find different layout concepts. Also haven't looked into the concept of a parity bit yet.
+Looking at the larger set of captures, only 80 of 5153 deduplicated packets have multiple tail byte options for an otherwise identical packet. When taking the upper two bits into consideration, the remaining 5 bits have fewer variations and they aren't random as expected for a signature or checksum.
 
-```
-b3 bit 0     = always 0
-b3 bits 1..5 = family-specific count, status, check signature/sum, maybe a value/payload?
-b3 bits 6..7 = role/state/feature, not globally independent
-```
+This **rules out sequence numbering** or global counting behaviours. And I'm far less convinced the remaining field(s) represent any kind of checksum or signature.
+
+| 'Prefix' | Count | Variants | Upper-2b counts | Final bits 1-5 |
+| --- | ---: | ---: | --- | --- |
+| `08 00 88` | 45,616 | 3 | `0` -> 39,458<br>`1` -> 5,658<br>`2` -> 500 | `19` -> 39,458<br>`1a` -> 6,158 |
+| `00 00 08` | 36,159 | 3 | `0` -> 36,140<br>`2` -> 18<br>`1` -> 1 | `10` -> 36,140<br>`11` -> 19 |
+| `08 00 95` | 4,132 | 3 | `0` -> 2,790<br>`2` -> 725<br>`1` -> 617 | `14` -> 2,790<br>`15` -> 1,342 |
+| `00 01 08` | 3,067 | 3 | `1` -> 2,690<br>`2` -> 270<br>`0` -> 107 | `01` -> 2,960<br>`00` -> 107 |
+| `0e 00 95` | 1,969 | 3 | `2` -> 719<br>`1` -> 628<br>`0` -> 622 | `0d` -> 1,347<br>`0c` -> 622 |
+| `0a 00 95` | 1,937 | 3 | `2` -> 713<br>`1` -> 615<br>`0` -> 609 | `1d` -> 1,328<br>`1c` -> 609 |
+| `0f 00 95` | 1,838 | 3 | `1` -> 725<br>`2` -> 628<br>`0` -> 485 | `11` -> 1,353<br>`10` -> 485 |
+| `0b 00 95` | 1,805 | 3 | `1` -> 707<br>`2` -> 615<br>`0` -> 483 | `01` -> 1,322<br>`00` -> 483 |
+| `0b 00 88` | 1,644 | 3 | `0` -> 1,638<br>`2` -> 4<br>`1` -> 2 | `05` -> 1,638<br>`06` -> 6 |
+| `0f 00 88` | 1,640 | 3 | `0` -> 1,635<br>`1` -> 3<br>`2` -> 2 | `15` -> 1,635<br>`16` -> 5 |
+| `0d 00 95` | 1,489 | 3 | `1` -> 719<br>`2` -> 626<br>`0` -> 144 | `09` -> 1,345<br>`08` -> 144 |
+| `09 00 95` | 1,464 | 3 | `1` -> 713<br>`2` -> 617<br>`0` -> 134 | `19` -> 1,330<br>`18` -> 134 |
 
 So the main work will be figuring out what relationship the bits `1..5` have with the payload.
-
-### Possible Relationships
-
-Looking at the lens control packets, `00 XX 0c YY` there are some possible options that seem to hold up in the existing dataset:
-
-```
-if (XX & 1)
-    YY_low6 = (XX + 0x0f) & 0x3E;
-else
-    YY_low6 = (XX + 0x30) & 0x3E;
-```
-
-> The bit0 = 0 is masked out
