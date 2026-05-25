@@ -390,7 +390,7 @@ rx 00 07 0c 98
 
 
 
-## Sync/Acutate Command
+## Sync/Actuate Command
 
 From the larger dump of iris closures, the packet `00 00 3f c6` is found just before the iris closes in all cases.
 
@@ -402,7 +402,7 @@ Given it's always the same, and the lens echoes it, I think it's treated as a 'e
 
 
 
-## Iris Setpoint/Drive
+## Aperture Drive
 
 The setting on the lens control ring doesn't appear to be used internally by the lens, **the body commands the iris setpoint**.
 
@@ -421,14 +421,20 @@ The command behaviours that I could find wasn't tightly correlated to the fallin
 The sequence is typically
 
 ```
-tx <staged command>     0x15 or 0x18 family, likely carries target/move information
-tx feedback/ack  		n 10 80 / n 00 95 / n 00 98 path depending on family
+tx <staged command>     0x18 family, carries target/move information
+tx feedback/ack  		n 10 80 / n 00 98 path depending on family
 tx 00 00 3f c6          execute/latch
 rx <staged command>     lens ack of the staged command
 tx n 00 95/98 ??        family-specific acknowledgement
 rx n 00 bf ??           execute response
 rx 00 00 3f c6          lens echo of execute shortly after the edge/handshake
 ```
+
+I also noticed that the iris IO line negative pulse that occurs when stopping down/up takes an increasing amount of time based on the 'stop distance' in the transition. I suspect this signal might indicate 'iris OK' or similar. 
+
+> In some captures there is some minor error as the camera delayed the command for the 'smoothed' simulated viewfinder brightness.
+
+### Setpoint
 
 The aperture setpoint seems to be encoded inside the `0x18` command with corresponding ack from the lens.
 
@@ -461,23 +467,104 @@ index = ((BE16(AA BB) - 0x1000) / 0x40) + 1
 >
 > Do any of the x-mount lenses/bodies have clickless iris or finer selection controls?
 
+### Feedback
 
+The body sends `00 01 08 82`, and the lens appears to return `<aperture_index> 00 08 <tail>` where index seems to correlate similarly to the control ring? `00 -> f2.8` and `15 = f32` for GF45.
 
-I also noticed that the iris IO line negative pulse that occurs when stopping down/up takes an increasing amount of time based on the 'stop distance' in the transition. I suspect this signal might indicate 'iris OK' or similar. 
+Same behaviour on GF110. DoF-preview enabled sweep shows the ring, camera command and feedback aligning well.
+
+![f2-f22 sweep with feedback plot matching user setting, body command and lens feedback](images/GF110-iris-sweep-f2.0-to-f22.png)
 
 ## Focus Motor Drive
 
 Two digital lines (in captures CH1 and CH2) correlate to the focus behaviour, so inferring their purpose and correlation to data from these captures should also be doable.
 
-Just before the CH2 low-going pulse occurs a packet from the body of the shape `02 00 15 ??` is sent to the lens, which the lens responds/ACKs seen as a 'command byte' of `0x95`.
+We (from later passes) know the top-two bits in the last byte represent some kind of sequence/phase index. I've called it a 'tag' value here, as it seems to correlate to the behaviours.
 
-The magnitude of the value sent seems to correlate to the low-pulse duration which probably represents an absolute focus target.
+### Packet Sequence
 
-> The body sends a 'sync' event of `00 00 3f c6` beforehand, even if the lens is wide-open.
+```
+tx 03 dc 15 10       Tag 0, value 988 request
+rx 00 00 00 00
 
-In the slower AF captures (low light) there are fewer and longer CH2 pulses.
+tx 0f 10 80 1a       ?
+rx 08 00 95 28       0x15 family ACK
 
-Like the focus ring, the `ss ss` appears to be a big-endian 16-bit position value that makes sense. On the GF45mm:
+tx 01 20 15 40       Tag 1, 288
+rx 03 dc 15 10       Echo of Slot A request
+
+tx 08 00 95 28       0x15 family ACK
+rx 0f 00 95 62       0x15 family ACK
+
+tx 01 ed 15 b2       Tag 2, target position 493
+rx 01 20 15 40       Echo of 288 Tag 1 
+
+tx 09 00 95 72       0x15 family ACK
+rx 08 00 95 aa       0x15 family ACK
+
+tx 00 00 3f c6       Execute/latch
+rx 01 ed 15 b2       Echo of target position 493 Tag 2
+
+tx 0a 00 95 ba       ACK/status
+rx 09 00 bf e0       Execute ACK
+
+tx 00 00 00 00
+rx 00 00 3f c6       Echo of execute
+```
+
+This sequence is seen on both GF45 and GF110.
+
+Plotting the values during a AF single-shot sequence for the captures using GF45 looks fairly reasonable.
+
+![focus-af-targeta-run2](images/focus-af-targeta-run2.png)
+
+![focus-af-targetb-slow-run2](images/focus-af-targetb-slow-run2.png)
+
+Given the focus occasionally runs at different speeds and we see some easing in the feedback position shape, I did a review pass looking for variations to understand what the likely meaning of the first and second payloads represent. 
+
+### Duration/speed?
+
+The value doesn't seem to correlate to previous positions or the upcoming position. There is a good linear correlation to the duration of the focus move for the smaller values, ~0.141ms/count. The 5000 value move is less correlated though and the 32767 doesn't align with motor actuation.
+
+> Treat this as poorly substantiated correlation, need more capture data
+
+| Tag 0 packet  | Value   | Mean CH2 low |
+| ------------- | ------- | ------------ |
+| `01 f4 15 18` | `500`   | ~16.6 ms     |
+| `02 38 15 1e` | `568`   | ~31.4 ms     |
+| `02 87 15 10` | `647`   | ~39.3 ms     |
+| `02 e2 15 0e` | `738`   | ~51.4 ms     |
+| `13 88 15 3e` | `5000`  | ~250.6 ms    |
+| `7f ff 15 10` | `32767` | -            |
+
+
+
+### Unknown Field
+
+The 'tag 1' field isn't very well understood. In the slower AF captures (low light) there are fewer and longer CH2 pulses which provide the most with variation. 
+
+- Manual focus tests all have `01 20 15 40`, the constantly seen `288` value in the longer captures. 
+  - Anecdotally the focus speed/sound is the same in manual mode?
+- Autofocus runs show different values:
+  - GF45 and GF110 captures have the some of the same fields 
+
+This might also relate to the mode, focus move type or curve?
+
+| `0x15` with Tag 1 payloads | BE converted to decimal |
+| -------------------------- | ----------------------- |
+| `01 20`                    | `288`                   |
+| `01 21`                    | `289`                   |
+| `01 23`                    | `291`                   |
+| `02 00`                    | `512`                   |
+| `02 01`                    | `513`                   |
+| `02 03`                    | `515`                   |
+| `03 21`                    | `801`                   |
+
+### Target Position
+
+Like the focus ring, the `ss ss` appears to be a **signed big-endian 16-bit position value** that makes sense. These packets are `tag 2` i.e. the final byte bits 6..7 are `11` .
+
+On the GF45mm:
 
 ```
 ff d9 15 8c -> -39    near infinity?
@@ -488,68 +575,21 @@ ff f2 15 86 -> -14
 04 d3 15 b0 -> 1235   close focus
 ```
 
-We know the top-two bits in the last byte represent some kind of sequence/phase index. I've called it a 'tag' value here, as it seems to correlate to the behaviours.
+The magnitude of the value sent seems to correlate to the low-pulse duration which probably represents an absolute focus target.
 
-Rough sequence:
+Also has high correlation (deltas of mostly 0, `gf45_slow_af` has 2-count difference) to the feedback value.
 
-```
-tx 03 dc 15 10       Tag 0, value 988 request
-rx 00 00 00 00
+### Position Feedback
 
-tx 0f 10 80 1a       ?
-rx 08 00 95 28       0x15 family ACK
-
-tx 01 20 15 40       Tag 1, contstant value 288
-rx 03 dc 15 10       Echo of Slot A request
-
-tx 08 00 95 28       0x15 family ACK
-rx 0f 00 95 62       0x15 family ACK
-
-tx 01 ed 15 b2       Tag 2, value 493
-rx 01 20 15 40       Delayed echo of 288 Tag 1 
-
-tx 09 00 95 72       0x15 family ACK
-rx 08 00 95 aa       0x15 family ACK
-
-tx 00 00 3f c6       Execute/latch
-rx 01 ed 15 b2       Delayed echo of 493 Tag 2
-
-tx 0a 00 95 ba       ACK/status
-rx 09 00 bf e0       Execute ACK
-
-tx 00 00 00 00
-rx 00 00 3f c6       Delayed echo of execute
-```
-
-This sequence is seen on both GF45 and GF110.
-
-It seems the value that's decoded when the line isn't high is the same `288` value in tag 1 (on both lenses) and doesn't correlate to anything meaningful?
-
-Plotting the values for the captures using GF45 looks fairly reasonable.
-
-![focus-af-targeta-run2](images/focus-af-targeta-run2.png)
-
-![focus-af-targetb-slow-run2](images/focus-af-targetb-slow-run2.png)
-
-
-
-> TODO: investigate how the body asks for different speeds of motor movement
-
-
-
-
-
-A feedback signal from the lens in `0x08` messages follows the BE16 format, i.e.  `rx ss ss 08 cc`.
+A feedback signal from the lens in `0x08` messages follows the BE16 format, i.e.  `rx ss ss 08 cc`. These all have tag = 1.
 
 The feedback value is sometimes `32767` which is `2^15 - 1` and would probably be the end of the encoder's range. If that value is seen we'd treat it as a sentinel/health update but probably not a valid position.
 
 The focus feedback values don't seem valid outside of active focus actuation regions.
 
-> TODO: Motor feedback field discussion/details
 
 
-
-
+### Resolution Differences
 
 The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much finer focus control available. This is backed up by focus sweep captures showing ~17x larger span of values:
 
@@ -558,13 +598,21 @@ The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much f
 | GF110 | -927 .. 22638 | 23565 counts | ~14.5 bits | -845 .. 22638  | 23483 counts | ~14.5 bits |
 | GF45  | -163 .. 1235  | 1398 counts  | ~10.5 bits | -162 .. 1235   | 1397 counts  | ~10.5 bits |
 
+The faster response of GF110 focus is also demonstrated
 
+| Capture Group      | GF110 mean CH2 low | GF45 mean CH2 low |
+| ------------------ | ------------------ | ----------------- |
+| Manual focus throw | ~6.0 ms            | ~24.9 ms          |
+| Normal AF          | ~39.2 ms           | ~147.9 ms         |
+| Dark/slow AF       | ~44.4 ms           | ~229.0 ms         |
 
 ## Unknown Commands
 
 Filtering and sorting for packets which are less understood. Over time these should be removed from the table into their own sections.
 
-These ones are partially known as iris/focus ring and command packets but didn't get classified by the filter due to different upper-2 bits. TODO: document behaviour/categorisation of these packets in relevant sections
+These ones are partially known as iris/focus ring and command packets but didn't get classified by the filter due to different upper-2 bits.  
+
+> TODO: document behaviour/categorisation of these packets in relevant sections
 
 | Count | Dir | Msg | ACK | Upper2 | Reason | Lenses | Captures | Top packets |  |
 | ---: | --- | --- | --- | ---: | --- | --- | ---: | --- | --- |
@@ -582,24 +630,6 @@ These ones are partially known as iris/focus ring and command packets but didn't
 |  2796 | `rx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
 |  2796 | `tx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
 |  2796 | `tx` | `0f` | `True`  |      3 | undecoded | GF110,GF45 |       72 | `08 00 8f d2`, `09 00 8f da`, `0e 00 8f c2`, `0b 00 8f ea` |
-
-### `0x08`
-
-| Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
-| ----: | ---- | ---- | ------- | -----: | --------- | ---------- | -------: | ---------------------------------------------------------- |
-| 23099 | `tx` | `08` | `False` |      0 | undecoded | GF110,GF45 |       94 | `00 00 08 20`                                              |
-| 17414 | `rx` | `08` | `False` |      0 | undecoded | GF110,GF45 |       92 | `00 00 08 20`, `00 08 08 28`, `00 88 08 2c`, `08 00 08 22` |
-|  2853 | `tx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `00 01 08 42`, `00 10 08 72`                               |
-|  2852 | `rx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `ff f5 08 72`, `fc b4 08 78`, `04 a3 08 48`, `ff d9 08 56` |
-
-May be some kind of general feedback byte,
-
-- Feedback index around iris events?
-  - Body sends `00 01 08 82`
-  - Lens returns `<aperture_index> 00 08 <tail>` where index `00 -> f2.8` and `15 = f32` for GF45?
-  - 
-- Dynamic looking feedback packets around focus motor events are known
-  - `rx <dynamic_hi> <dynamic_lo> 08 <tail>, where tail upper2b = 1`
 
 
 
@@ -667,7 +697,7 @@ Throughout the docs I've been treating the obviously unstable last byte as some 
 
 ### Acknowledgement
 
-The command byte (third byte sent over the wire) seems to include an 'ack' flag at bit 7, i.e. `cmd | 0x80`, demonstrated on most currently known packets between tx and rx:
+The command byte (third byte sent over the wire) includes an 'ack' flag at bit 7, i.e. `cmd | 0x80`, demonstrated on most currently known packets between tx and rx:
 
 ``` 
 0x08 -> 0x88
@@ -771,7 +801,7 @@ It's a bit hard to tell right now if the next bit is independent, it's another t
 
 Both of my GF lenses are primes, but there must be a field(s) which provide feedback on zoom position or focal length so the correct exif data can be written when using those lenses.
 
-> iIt would be much appreciated if anyone is able to capture short, clean sequences before and after a manual change to the zoom, with and/or without taking a photo in between. Including either the photos or a copy of the exif of photos taken during the capture may allow for additional correlation
+> It would be much appreciated if anyone is able to capture short, clean sequences before and after a manual change to the zoom, with and/or without taking a photo in between. Including either the photos or a copy of the exif of photos taken during the capture may allow for additional correlation
 
 
 
