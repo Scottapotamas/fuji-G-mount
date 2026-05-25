@@ -621,25 +621,27 @@ Throughout the docs I've been treating the seemingly unstable last byte as some 
 
 ### Message/Command
 
-The command byte (third byte sent over the wire) includes an 'ack' flag at bit 7, i.e. `cmd | 0x80`, demonstrated on most currently known packets between tx and rx. The total group of unique command bytes observed is below:
+The command byte (third byte sent over the wire) includes an 'ack' flag at bit 7, i.e. `cmd | 0x80`, demonstrated on most currently known packets between tx and rx.
 
-| Message | CMD    | ACK/Response | Decode status                              |
-| ------- | ------ | ------------ | ------------------------------------------ |
-| `0x00`  | —      | `0x80`       | transport/status, not really decoded       |
-| `0x05`  |        |              | Not decoded                                |
-| `0x06`  |        |              | Not decoded                                |
-| `0x08`  | `0x08` | `0x88`       | Feedback, partially decoded.               |
-| `0x09`  | `0x09` | `0x89`       | Not decoded                                |
-| `0x10`  |        |              | Not decoded                                |
-| `0x0c`  | `0x0c` | `0x8c`       | Mostly decoded for iris/focus control ring |
-| `0x0f`  | `0x0f` | `0x8f`       | Not decoded                                |
-| `0x15`  | `0x15` | `0x95`       | Focus motor, partially decoded             |
-| `0x16`  | `0x16` | `0x96`       | Not documented/decoded                     |
-| `0x18`  | `0x18` | `0x98`       | Aperture setpoint, mostly decoded          |
-| `0x20`  |        |              | Not decoded                                |
-| `0x28`  |        |              | Not decoded                                |
-| `0x2a`  | `0x2a` | `0xaa`       | Not documented/decoded                     |
-| `0x3f`  | `0x3f` | `0xbf`       | Execute/latch, mostly decoded              |
+The total group of unique command bytes observed is below, entries with listed CMD or ACK values are in captured files. Currently the possible `0x00` command has not been observed.
+
+| CMD    | ACK/Response | Decode status                                |
+| ------ | ------------ | -------------------------------------------- |
+| —      | `0x80`       | Transport/status, not really decoded         |
+| `0x05` | `0x85`       | Not documented/decoded                       |
+| `0x06` | `0x86`       | Not documented/decoded                       |
+| `0x08` | `0x88`       | Aperture/Focus feedback, mostly decoded.     |
+| `0x09` | `0x89`       | Not decoded                                  |
+| `0x10` | `0x90`       | Not documented/decoded                       |
+| `0x0c` | `0x8c`       | Aperture/focus control ring, mostly decoded. |
+| `0x0f` | `0x8f`       | Not decoded                                  |
+| `0x15` | `0x95`       | Focus motor, mostly decoded                  |
+| `0x16` | `0x96`       | Not documented/decoded                       |
+| `0x18` | `0x98`       | Aperture setpoint, mostly decoded            |
+| `0x20` | `0xa0`       | Not documented/decoded                       |
+| `0x28` | `0xa8`       | Not documented/decoded                       |
+| `0x2a` | `0xaa`       | Not documented/decoded                       |
+| `0x3f` | `0xbf`       | Execute/latch, mostly decoded                |
 
 
 

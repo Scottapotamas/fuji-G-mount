@@ -47,3 +47,56 @@ Autofocus drive behaviour is in a series of captures following the scheme `focus
 - `A` runs are on the 'longer' end of the focus scale, ~3.4m indicated, but the macro adapter is in-use so these distances aren't useful, actual target was about 30cm away. Iris was set to f3.2?
 - `B` runs are in the near end of the focus scale, ~1m indicated, also with the macro adapter.
 - The two runs named `focus-af-targetB-runX-dark` 1 and 2, there was less light on the target and it was done at f22 which caused it to hunt a bit more.
+
+Additional focus hunting tests with tenscap meant it hunted and failed to focus.
+- `focus-mf-lenscap.sal` is in MF mode, back-button focus used to trigger AF
+- `focus-afs-lenscap.sal` in single-af mode, back-button used to trigger
+- `focus-afc-lenscap.sal` in continuous servo focus, backbutton held for 3 seconds.
+
+# Power On/Off
+
+A series of new captures `power-onX.sal` and `power-offX.sal`. Done with lens set to "C" with the camera showing F20 (can't remember)? Camera was in MF setting.
+
+`power-on4-f2` and off variant were done with the iris control ring set to f2.0.
+
+The camera runs a sensor clean on shutdown.
+
+## Preview Mode
+
+`preview-mode-enter` and `preview-mode-exit` are variations where the lens is audibly woken up/slept but not a full camera power cycle, no sensor cleaning.
+
+Camera was set to F2, 1/125, ISO1600, AFS and was awake/viewfinder before going into image review.
+
+## Sleep
+
+Camera was in viewfinder state and allowed to disable/sleep the display. I woke it by rotating the manual focus ring. 
+Set to 15-seconds.
+
+`display-sleep` and `display-wake`.
+
+## Lens Removal
+
+`lens-dismount` and `lens-mount` were done while the camera was on, as a variation.
+
+## Firmware Update
+
+Power-up while holding DISP/BACK button brings up the update menu. `power-into-fwupdate.sal`
+
+Display reports "Body version 3.11" and "Lens version 1.10".
+
+# State Changes
+
+Camera otherwise idle while changing the 3-position focus mode lever.
+
+`mode-afc-to-afs`, `mode-afs-to-afc` and `mode-afc-to-mf` and `mode-mf-to-afc` are the possible individual directions.
+
+`mode-afs-afc-mf-sweep` sweeps through them and back.
+
+# Half-shutter
+
+The lens was set to f2. Shutterspeed at 1/125. Iso 1600. 
+
+- `half-shutter-mf-lenscap` for manual focus mode with lenscap
+- `half-shutter-mf` for manual focus mode, no lenscap
+- `half-shutter-afs-lenscap` includes focus attempt
+- `half-shutter-afs` includes focus attempt

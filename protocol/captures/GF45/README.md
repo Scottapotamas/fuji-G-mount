@@ -46,6 +46,52 @@ Autofocus drive behaviour is in a series of captures following the scheme `focus
 
 These tests were all done at wide-open f2.8 to try and keep iris change behaviour out of it.
 
+# Power On/Off
+
+A series of new captures `power-onX.sal` and `power-offX.sal`. Done with lens set to "2.8" Camera was in AFS setting.
+
+The camera runs a sensor clean on shutdown.
+
+## Preview Mode
+
+`preview-mode-enter` and `preview-mode-exit` are variations where the lens is audibly woken up/slept but not a full camera power cycle, no sensor cleaning.
+
+Camera was set to F2.8, 1/125, ISO1600, MF and was awake/viewfinder before going into image review.
+
+## Sleep
+
+Camera was in viewfinder state and allowed to disable/sleep the display. I woke it by rotating the manual focus ring. 
+Set to 15-seconds.
+
+`display-sleep` and `display-wake`.
+
+## Lens Removal
+
+`lens-dismount` and `lens-mount` were done while the camera was on, as a variation.
+
+## Firmware Update
+
+Power-up while holding DISP/BACK button brings up the update menu. `power-into-fwupdate.sal`
+
+Display reports "Body version 3.11" and "Lens version 1.00".
+
+# State Changes
+
+Camera otherwise idle while changing the 3-position focus mode lever.
+
+`mode-afc-to-afs`, `mode-afs-to-afc` and `mode-afc-to-mf` and `mode-mf-to-afc` are the possible individual directions.
+
+`mode-afs-afc-mf-sweep` sweeps through them and back.
+
+# Half-shutter
+
+The lens was set to f4. Shutterspeed at 1/125. Iso 1600. 
+
+- `half-shutter-mf-lenscap` for manual focus mode with lenscap
+- `half-shutter-mf` for manual focus mode, no lenscap
+- `half-shutter-afs-lenscap` includes focus attempt
+- `half-shutter-afs` includes focus attempt
+
 ### Notes
 
 `idle-13sec.sal` is captured with the same channel config as the iris/focus captures. The camera was configured in AF mode, lens was on F2. Screen was on, no user interaction before/during the capture.
