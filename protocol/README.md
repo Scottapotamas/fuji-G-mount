@@ -647,7 +647,7 @@ The total group of unique command bytes observed is below, entries with listed C
 
 ### Tail/Status Byte
 
-Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's a little better understood as a bitfield/structure with some stateful information and **it does not contain a CRC**. 
+Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's a little better understood as a bitfield/structure with some stateful information included.
 
 Using all the captured packets, de-duplicating and then sorting on 'command byte' and payload to find different header bytes for the same packet.
 
@@ -709,15 +709,48 @@ Considering that bit reduces the variation on the most common packets captured:
 | `0d 00 95` | 1,489 | 3 | `0` -> 144<br>`1` -> 719<br>`2` -> 626 | `0` -> 144<br>`1` -> 1,345 | `04` -> 1,489 |
 | `09 00 95` | 1,464 | 3 | `0` -> 134<br>`1` -> 713<br>`2` -> 617 | `0` -> 134<br>`1` -> 1,330 | `0c` -> 1,464 |
 
-There are only 3 captured packets with variation in the remaining bits.
+It's a bit hard to tell right now if the next bit is independent, it's another two-bit field instead of just bit-1, or if it's a larger enum/status field? For the limited set of `88` packets here, bit 2 appears high in the longer sequences?
 
-| Prefix     |  Count | Variants | Bit 6..7                                    | Bit 1                         | Remaining bits 2..5             |
-| ---------- | -----: | -------: | ------------------------------------------- | ----------------------------- | ------------------------------- |
-| `08 00 88` | 45,616 |        3 | `0` -> 39,458<br>`1` -> 5,658<br>`2` -> 500 | `1` -> 39,458<br>`0` -> 6,158 | `0c` -> 39,458<br>`0d` -> 6,158 |
-| `0b 00 88` |  1,644 |        3 | `0` -> 1,638<br>`1` -> 2<br>`2` -> 4        | `1` -> 1,638<br>`0` -> 6      | `02` -> 1,638<br>`03` -> 6      |
-| `0f 00 88` |  1,640 |        3 | `0` -> 1,635<br>`1` -> 3<br>`2` -> 2        | `1` -> 1,635<br>`0` -> 5      | `0a` -> 1,635<br>`0b` -> 5      |
+The 5-bit check value is computed as a truncating sum of 5-bit chunks over the packet, including the upper2 bits in the last byte.
 
-It's a bit hard to tell right now if the next bit is independent, it's another two-bit field instead of just bit-1, or if it's a larger enum/status field? For the limited set of `88` packets here, bit 2 appears high in the longer sequences? TODO: see if that holds up across the dataset.
+```
+g0 = b0[7:3]
+g1 = b0[2:0] : b1[7:6]
+g2 = b1[5:1]
+g3 = b1[0]   : cmd[7:4]
+g4 = cmd[3:0]: tag2[1]
+g5 = tag2[0]
+```
+
+Then `check5 = (g0 + g1 + g2 + g3 + g4 + g5) & 0x1f`
+
+Demonstrated on some packets:
+
+```
+00 00 08 20
+tag2   = 0
+check5 = 0x10
+tail   = 0x20
+
+00 02 0c 32
+tag2   = 0
+check5 = 0x19
+tail   = 0x32
+
+00 01 0c 92
+tag2   = 2
+check5 = 0x09
+tail   = 0x92
+
+00 00 3f c6
+tag2   = 3
+check5 = 0x03
+tail   = 0xc6
+```
+
+This appears correct for 100% of `602,863` captured packets.
+
+
 
 ### Wire/Logical Order
 
@@ -733,7 +766,7 @@ It's probably not wise to analyse against that shape though.
 
 Filtering and sorting for packets which are less understood. Over time these should be removed from the table into their own sections.
 
-Some others were only captured in the 'old' capture sets, so I need to re-run a series of captures for power-sequencing with both lenses, as well as AF mode changes, AF-S vs AF-C, GF110 focus motor energisation to maintain position, and shutter activations of varying durations.
+Some others were only captured in the 'old' capture sets, so I need to re-run a captures for GF110 focus motor energisation to maintain position, and shutter activation of varying duration(s).
 
 > TODO: document behaviour/categorisation of these in relevant sections when enough is known about them
 
@@ -749,6 +782,10 @@ rx 00 00 05 14
 tx 08 00 85 26
 ```
 
+GF110 captures have `00 00 05 xx` zero-payload packets across `upper2 = 0/1/2`.
+
+
+
 ### `0x06`
 
 Fixed payload `b8 01`, echoed and ACKed before the `0x05` exchange
@@ -760,6 +797,14 @@ rx 08 00 86 2a
 rx b8 01 06 26
 tx 0a 00 86 3a
 ```
+
+
+
+### `0x07`
+
+Found in the GF45mm capture of 'startup into firmware update mode'.
+
+> TODO review that capture
 
 ### `0x10`
 
@@ -883,6 +928,32 @@ It is followed by the same `00 00 3f c6` execute/latch sequence as `0x15` and `0
 
 
 
+```
+00 02 2a 2e    upper2 = 0, power-on, lens-mount, preview-exit, and some focus-context captures
+00 02 2a 70    upper2 = 1, half-shutter AFS/MF captures
+```
+
+```
+tx 00 00 2a 6e
+rx -
+
+tx 08 10 80 22
+rx 08 00 aa 40
+
+tx 00 00 3f c6
+rx 00 00 2a 6e
+
+tx 09 00 aa 48
+rx 08 00 bf d8
+
+tx -
+rx 00 00 3f c6
+```
+
+
+
+
+
 ### `0x0f`
 
 | Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
@@ -946,6 +1017,26 @@ The 0x09 lens response has a payload value, observed as:
 00 01 09 c8
 00 02 09 ea
 00 03 09 ca
+```
+
+
+
+Some newer captures contain `upper2 = 0`. Appears in power transitions, half-shutter captures, preview/playback transitions, focus-mode-context captures, and lens mount state captures
+
+```
+tx 00 01 09 04
+rx 00 00 09 24
+```
+
+```
+08 00 89 36
+09 00 89 3e
+0a 00 89 06
+0b 00 89 0e
+0c 00 89 16
+0d 00 89 1e
+0e 00 89 26
+0f 00 89 2e
 ```
 
 
