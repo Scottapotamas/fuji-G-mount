@@ -2,6 +2,8 @@
 
 Sniffing of the communications between the body and lens is achieved with a modified MCEX-45G, and builds from the basic electrical analysis described in [the electrical README](/electrical).
 
+This document has been reworked several times as my understanding of the protocol has developed. Apologies for mixed 'exploratory log' and 'findings' which sometimes includes extra information.
+
 ### Logic Analyser Captures
 
 Useful trace files are committed to the `captures` folder. Most analysis was done against the GF45 dumps, with later checks against the GF110.
@@ -22,7 +24,7 @@ Based on this, we can assume that:
 - Pin 10 is a 1.5MHz SPI-style clock signal.
 - Pin 11 is the body's DATA IN line.
 
-With this in mind, we now aim to identify the properties of the communications bus and determine if it's typical SPI or some Fuji special sauce.
+With this in mind, we now aim to identify the properties of the communications bus and determine that it uses typical SPI instead of some Fuji special sauce.
 
 - A transaction consists of 32-bits at minimum
   - Almost all transactions are 32-bits long.
@@ -36,9 +38,9 @@ By manually inspecting logic captures, one example section helps determine the c
   - Demonstrated by the edges on the first falling edge, and on falling edges aligned to 8-bit sequences.
     ![clock-phase-evidence](./images/clock-phase-evidence.png)
 
-As with typical SPI busses working with bidirectional transfers, there a fairly visible 1-packet delay between the body writing a field and the lens response. When I'm listing tx/rx pairs in a given transaction in this document, that offset isn't included unless specified.
+As with typical SPI busses working with bidirectional transfers, there a fairly visible 1-packet delay between the body writing a field and the lens response.
 
-# Protocol Analysis
+When I'm listing tx/rx pairs in a given transaction in this document, that offset isn't included unless specified.
 
 
 
@@ -193,43 +195,31 @@ These transactions are from the body to the lens and **describe the body.**
 
 
 
-
-
-## Iris Close Command
-
-From the larger/recent dump of iris closures, the packet `00 00 3f c6` is found just before the iris closes in all cases. There's always another packet which has the lens responding, `n 00 bf ??` i.e. `0b 00 bf f0` immediately before the falling edge on the iris status IO.
-
-This behaviour doesn't occur when the control ring is rotated without dof preview on.
-
-Given it's always the same, and the lens echoes it, I think it's treated more like 'execute' or 'sync', with the actual command value staged beforehand.
-
-I also noticed that the iris IO line negative pulse that occurs when stopping down/up takes an increasing amount of time based on the 'stop distance' in the transition. I suspect this signal might indicate 'iris OK' or similar. 
-
 ## Aperture Control Ring
 
 From the large set of lens iris change captures, a pattern across the captures started to be more obvious in the packets sent from the lens to the body (i.e. body rx):
 
 ```
-rx 00 02 0c ??
-rx 00 03 0c ??
-rx 00 04 0c ??
+rx 00 02 0c xx
+rx 00 03 0c xx
+rx 00 04 0c xx
 ...
-rx 00 10 0c ??
+rx 00 10 0c xx
 ...
-rx 00 16 0c ??
+rx 00 16 0c xx
 ```
 
-The body sends `00 00 00 00` during these packets, which probably implies the body reads a 'data ready' field from the lens?
+The body requests it with `00 00 0c xx` and specifically clocks a transaction for readout as `tx 00 00 00 00` is observed during these packets. It's currently unclear if there's a 'data ready' or 'state dirty' flag that triggers the poll.
 
-> The `0c` command is also used for focus ring incremental readout, but the top two bits of the last byte are always low for iris ring packets, `bit 6..7 = 00`.
+The `0c` command is also used for focus ring incremental readout, but the **top two bits of the last byte are always low for iris ring packets**, `bit 6..7 = 00`.
 
-Sequenced something like this (low confidence)?
+Sequenced something like this:
 
 ```
-tx 00 00 0c ??       body asks for ring/aperture-index state
-rx 00 XX 0c ??       lens reports ring/aperture ordinal or changed-position value
-tx/rx n 00 8c ??     tagged transport/status wrapper for that exchange?
-rx n 00 80 ??        final status/result acknowledgement
+tx 00 00 0c ??       body asks for aperture-index state
+rx 00 XX 0c ??       lens reports aperture ordinal value
+tx/rx n 00 8c ??     ACK
+rx n 00 80 ??        unsure, final status/result
 ```
 
 If I encoded a hypothetical index to each accessible f-stop position on the GF45mm control ring (and retrospectively 1-index it):
@@ -269,11 +259,11 @@ f3.6 -> f4.0   rx 00 04 0c 34
 f29 -> f32     rx 00 16 0c 06
 ```
 
-> ~~This raises the question about the range of accessible f-stops on the control dial for faster/slower lenses~~
->
-> Update: On the GF110mm which has f2.0 to f22 range, there's the same number of third-stops over the range, they map against index the same way. 
->
+On the GF110mm which has f2.0 to f22 range, there's the same number of third-stops over the range, they map against index the same way.
+
 > There are lenses in the GF ecosystem such as the 80mm f1.7 to 22 which should have more configurable apertures? Are there lenses with fewer?
+
+Plotting the values during the 'sweep' captures shows the transitions.
 
 ![45mm lens iris against index value, increases in clear steps over time during sweep capture](images/iris-ring-sweeps-combined.png)
 
@@ -281,7 +271,7 @@ f29 -> f32     rx 00 16 0c 06
 
 Now there's a known packet behaviour `00 XX 0c YY`, poking at the relationship(s) to the final byte may be easier?
 
-A full observation example set:
+A larger observation example set:
 
 ```
 00 01 0c 10
@@ -310,43 +300,137 @@ A full observation example set:
 
 The lenses also have a `A` automatic mode selection position and a `C` custom position for camera-side control over the aperture. I forgot to capture these with the GF45, but did with GF110.
 
-When entering AUTO there was less obvious packet behaviour as it also doesn't allow dof-preview.
+When entering AUTO there was less/no *obvious* packet behaviour as it also doesn't allow dof-preview.
 
 I noticed a 'new' `00 00 0c 30` packet was visible, but later review shows it in other manual iris sweeps as well.
 
 There wasn't a visible change when clicking the ring to custom mode (camera showed f4). There was a notable change of `00 80 08 24` packets to `08 80 08 26` though?
 
+> On X-mount, or the GF cine-zoom for Eterna, we might see different behaviour as they support de-clicked behaviour?
+>
+> i.e. `XF16-55mmF2.8 R LM WR II` or `XF18-120mmF4 LM PZ WR`
 
 
-## Iris Setting Drive
 
-While reading the ring value is well understood, requesting a particular aperture setting on the lens from the body isn't as clear right now (I mentally overloaded that behaviour with the `0c` iris ring packets).
+## Focus Control Ring
 
-Controlling the aperture blades without changing the control ring on the lens is doable with auto mode (and forcing auto-exposure to stop down/up) and in 'custom' mode where the body ring controls the f-stop target (with dof-preview active to force it).
+The focus ring is also fly-by-wire. Because the ring isn't marked and is free to rotate infinitely, there's no easy way to capture known step values.
 
-The concept is proven quickly as there's no `00 xx 0c cc` 'ring index' packets in the GF110 auto/custom captures but there are `00 00 3f c6` execute commands and the falling edge on the iris IO. There are two different/new commands that I could find correlated to the falling edges:
+So a handful of captures were done to cover a range of possible packet scenarios in both manual focus mode (lens motor activates on turn), and autofocus mode where the ring isn't typically used.
 
-- `0x15` 'staging' commands, seen in GF110 `custom-aperture-sweep-closed`
-  - Seemingly acknowledged with `0x95`/`0xbf`
-  - Lines up with immediate iris IO falling edges (within 3ms) in the GF110 CUSTOM/numeric captures.
-  - The `0x18` commands are not near the edge.
-- `0x18` staged commands, seen in GF110 `auto-aperture-dark-to-bright-to-dark` without `0x15` commands.
-  - Acknowledged through the `0x98`/`0xbf`, sharing the same execute command.
+- Captures with small, longer, and >revolution movements made continuously in each direction
+- Captured back and forth movements, expecting to see a rough sine/triangle position trace 
+
+After looking through the captures for unique/different packets, a packet from the lens seems to be a viable candidate for a big-endian 16-bit value:
+
+```
+rx 00 01 0c 92    +1
+rx 00 04 0c b6    +4
+rx 00 08 0c ba    +8
+
+rx ff ff 0c 8c    -1
+rx ff fb 0c 88    -5
+rx ff f8 0c a6    -8
+```
+
+- Clockwise captures are positive values, counterclockwise are negative.
+- They are relative values, showing larger values in the 'fast' rotation captures.
+- They aren't published/polled at a different rate based on change.
+- The behaviour appears the same on the GF45 and GF110mm lenses, even though the GF110 has a much longer throw.
+
+The **body polls the increment value** with `00 00 0c b2`, and the lens responds two transactions later.
+
+```
+tx 00 00 0c b2       request ring state
+rx 00 11 09 96       
+
+tx 0e 00 89 a8
+rx 0d 00 8c ac       ACK the 0x0c read
+
+tx 00 00 00 00
+rx 00 04 0c b6       ring delta = +4
+
+tx 08 00 8c 84       ACK the 0x0c value?
+rx 0e 00 80 02       Possible status update
+```
+
+The `0c` is also used for the iris control ring. For focus packets, the **top two bits of the last byte are always high** (`bit 6..7 = 11`).
+
+In the captures where the manual focus mode was active and the motor would move, we see additional `0x15` packets which are documented in the focus motor section.
+
+Extracting the values with timestamps and then plotting them and a running sum, gives convincing results.
+
+![focus-ring-ccw-continuous-turns](images/focus-ring-ccw-continuous-turns.png)![focus-ring-af-cw-ccw-alternating-medium](images/focus-ring-af-cw-ccw-alternating-medium.png)
+
+Example packets that are useful for comparison:
+
+```
+# autofocus/non-actuating, clockwise continuous turns
+rx 00 01 0c 92
+rx 00 02 0c b4
+rx 00 04 0c b6
+rx 00 08 0c ba
+
+# autofocus/non-actuating, counter-clockwise turns
+rx ff ff 0c 8c
+rx ff fd 0c 8a
+rx ff fb 0c 88
+rx ff f6 0c a4
+
+# manual-focus/actuating, alternating direction
+rx 00 04 0c b6
+rx 00 03 0c 94
+rx 00 05 0c 96
+rx ff ff 0c 8c
+rx ff fd 0c 8a
+rx ff fb 0c 88
+rx 00 06 0c b8
+rx 00 07 0c 98
+```
+
+
+
+## Sync/Acutate Command
+
+From the larger dump of iris closures, the packet `00 00 3f c6` is found just before the iris closes in all cases.
+
+The lens acks with `n 00 bf xx` i.e. `0b 00 bf f0` immediately before the falling edge on the iris status IO.
+
+This behaviour doesn't occur when the control ring is rotated without dof preview on, or the focus control ring rotated in auto-focus modes.
+
+Given it's always the same, and the lens echoes it, I think it's treated as a 'execute' or 'sync' event. The values being acted on appear to be staged beforehand (discussed in next sections).
+
+
+
+## Iris Setpoint/Drive
+
+The setting on the lens control ring doesn't appear to be used internally by the lens, **the body commands the iris setpoint**.
+
+Controlling the aperture blades without changing the control ring on the lens is doable in auto mode (and forcing auto-exposure to stop down/up) and in 'custom' mode where the body ring controls the f-stop target (with dof-preview active to force it).
+
+The concept is proven with captures which have no `00 xx 0c cc` 'ring index' packets in the GF110 auto/custom tests, but `00 00 3f c6` execute commands and the falling edge on the iris IO are visible.
+
+The command behaviours that I could find wasn't tightly correlated to the falling edges:
+
+- `0x18` 'staging' commands, seen in GF110 `auto-aperture-dark-to-bright-to-dark` without motor `0x15` commands.
+  - The `0x18` commands are not near the IO falling edge.
+  - Acknowledged with `0x98`, sharing the same execute command.
   - Lines up with most of the GF45 iris edges as well.
+
 
 The sequence is typically
 
 ```
 tx <staged command>     0x15 or 0x18 family, likely carries target/move information
-tx idle/status wrapper  n 10 80 / n 00 95 / n 00 98 path depending on family
+tx feedback/ack  		n 10 80 / n 00 95 / n 00 98 path depending on family
 tx 00 00 3f c6          execute/latch
-rx <staged command>     lens echo of the staged command
+rx <staged command>     lens ack of the staged command
 tx n 00 95/98 ??        family-specific acknowledgement
 rx n 00 bf ??           execute response
 rx 00 00 3f c6          lens echo of execute shortly after the edge/handshake
 ```
 
-The aperture setpoint seems to be encoded inside the `0x18` command and is acked by the lens.
+The aperture setpoint seems to be encoded inside the `0x18` command with corresponding ack from the lens.
 
 ```
 tx AA BB 18 CC
@@ -379,163 +463,17 @@ index = ((BE16(AA BB) - 0x1000) / 0x40) + 1
 
 
 
-For the other field `0x15 I've not yet found out what it does. Examples from GF110 captures:
-
-```
-48 54 15 80
-48 58 15 84
-48 5f 15 aa
-48 61 15 ac
-48 78 15 a4
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-> Old notes below
-
-There's a burst of packets before the iris line goes low.
-
-Starts when a packet we don't recognise prior to iris event `LOW` is found (manually).
-
-The iris event was 275ms long.
-
-Preceded by a standard set of IDLE 6-burst transmissions (coincidence or intentional?).
-
-**Packet 1** 
-
-Camera: `0x12 0x40 0x18 0xBA`
-
-Lens: -
-
-**Packet 2**
-
-Camera: `0x09 0x10 0x80 0x2A`
-
-Lens: `0x08 0x00 0x98 0xB6`
-
-**Packet 3**
-
-Camera:  `0x00 0x00 0x3F 0xC6` 
-
-Lens: `0x12 0x40 0x18 0xBA`
-
-**Packet 4**
-
-Camera: `0x0A 0x00 0x98 0x86`
-
-Lens: `0x09 0x00 0xBF 0xE0`
-
-Iris line goes low
-
-**Packet 5**
-
-Camera:  `0x00 0x00 0x00 0x00`
-
-Lens:  `0x00 0x00 0x3F 0xC6`
-
-**Packet 6**
-
-Camera:  `0x08 0x00 0xBF 0xD8`
-
-Lens:  `0x0A 0x00 0x80 0x22`
-
-**Waiting**
-
-40ms gap starts, followed by idle packets at normal interval
-
-`IDLE4` ` IDLE4` `IDLE6` `IDLE4` ` IDLE4` `IDLE6` 
-
-Then iris line returns to `HIGH`.
-
-
-
-## Focus Control Ring
-
-The focus ring is also fly-by-wire. Because the ring isn't marked and is free to rotate infinitely, there's no easy way to capture known step values.
-
-So a handful of captures were done to cover a range of possible packet scenarios in both manual focus mode (lens motor activates on turn), and autofocus mode where the ring isn't typically used.
-
-- Captures with small, longer, and >revolution movements made continuously in each direction
-- Captured back and forth movements, expecting to see a rough sine/triangle position trace 
-
-After looking through the captures for unique/different packets, a packet from the lens seems to be a viable candidate for a big-endian 16-bit value:
-
-```
-rx 00 01 0c 92    +1
-rx 00 04 0c b6    +4
-rx 00 08 0c ba    +8
-
-rx ff ff 0c 8c    -1
-rx ff fb 0c 88    -5
-rx ff f8 0c a6    -8
-```
-
-Clockwise captures are positive values, counterclockwise are negative. They seem to be relative values, not absolute position as they were larger in the 'fast' captures, and aren't published/polled at a different rate.
-
-The behaviour appears the same on the GF45 and GF110mm lenses, even though the GF110 has a much longer throw.
-
-The **body queries the increment value** with `00 00 0c b2`, and the lens responds two transactions later.
-
-```
-tx 00 00 0c b2       body asks for ring-motion state
-...
-tx 00 00 00 00
-rx ss ss 0c cc       lens reports signed relative value
-```
-
-The `0c` is also seen used for the iris control ring. For focus packets, the top two bits of the last byte are always high (`bit 6..7 = 11`).
-
-In the captures where the manual focus mode was active and the motor would move, we see additional `0x15` packets which I'll look into/document in their own section.
-
-Extracting the values with timestamps and then plotting them and a running sum, gives convincing results.
-
-![focus-ring-ccw-continuous-turns](images/focus-ring-ccw-continuous-turns.png)![focus-ring-af-cw-ccw-alternating-medium](images/focus-ring-af-cw-ccw-alternating-medium.png)
-
-Example packets that are useful for comparison:
-
-```
-# autofocus/non-actuating, clockwise continuous turns
-rx 00 01 0c 92
-rx 00 02 0c b4
-rx 00 04 0c b6
-rx 00 08 0c ba
-
-# autofocus/non-actuating, counter-clockwise turns
-rx ff ff 0c 8c
-rx ff fd 0c 8a
-rx ff fb 0c 88
-rx ff f6 0c a4
-
-# manual-focus/actuating, alternating direction
-rx 00 04 0c b6
-rx 00 03 0c 94
-rx 00 05 0c 96
-rx ff ff 0c 8c
-rx ff fd 0c 8a
-rx ff fb 0c 88
-rx 00 06 0c b8
-rx 00 07 0c 98
-```
+I also noticed that the iris IO line negative pulse that occurs when stopping down/up takes an increasing amount of time based on the 'stop distance' in the transition. I suspect this signal might indicate 'iris OK' or similar. 
 
 ## Focus Motor Drive
 
 Two digital lines (in captures CH1 and CH2) correlate to the focus behaviour, so inferring their purpose and correlation to data from these captures should also be doable.
 
-Just before the CH2 low-going pulse occurs a packet from the body of the shape `02 00 15 ??` is sent to the lens, which the lens responds/ACKs. The value seems to correlate to the low-pulse duration which probably represents an absolute focus target?
+Just before the CH2 low-going pulse occurs a packet from the body of the shape `02 00 15 ??` is sent to the lens, which the lens responds/ACKs seen as a 'command byte' of `0x95`.
 
-> I also see the camera send `00 00 3f c6`, so it might be more than iris closure, or it's sent even if the lens is wide-open?
+The magnitude of the value sent seems to correlate to the low-pulse duration which probably represents an absolute focus target.
+
+> The body sends a 'sync' event of `00 00 3f c6` beforehand, even if the lens is wide-open.
 
 In the slower AF captures (low light) there are fewer and longer CH2 pulses.
 
@@ -550,20 +488,42 @@ ff f2 15 86 -> -14
 04 d3 15 b0 -> 1235   close focus
 ```
 
-There is also a packet from the lens `rx ss ss 08 cc` after CH2 returns high which looks like lens feedback for completion or actual position.
-
-The feedback value is often `32767` which is `2^15 - 1` and would probably be the end of the encoder's range. If that value is seen we'd treat it as a sentinel/health update but probably not a valid position.
+We know the top-two bits in the last byte represent some kind of sequence/phase index. I've called it a 'tag' value here, as it seems to correlate to the behaviours.
 
 Rough sequence:
 
 ```
-tx ss ss 15 cc       body requests focus target/step endpoint
-...
-tx 00 00 3f c6       execute/sync movement
-CH2 low              motor movement window
-...
-rx ss ss 08 cc       lens reports reached/settled focus position
+tx 03 dc 15 10       Tag 0, value 988 request
+rx 00 00 00 00
+
+tx 0f 10 80 1a       ?
+rx 08 00 95 28       0x15 family ACK
+
+tx 01 20 15 40       Tag 1, contstant value 288
+rx 03 dc 15 10       Echo of Slot A request
+
+tx 08 00 95 28       0x15 family ACK
+rx 0f 00 95 62       0x15 family ACK
+
+tx 01 ed 15 b2       Tag 2, value 493
+rx 01 20 15 40       Delayed echo of 288 Tag 1 
+
+tx 09 00 95 72       0x15 family ACK
+rx 08 00 95 aa       0x15 family ACK
+
+tx 00 00 3f c6       Execute/latch
+rx 01 ed 15 b2       Delayed echo of 493 Tag 2
+
+tx 0a 00 95 ba       ACK/status
+rx 09 00 bf e0       Execute ACK
+
+tx 00 00 00 00
+rx 00 00 3f c6       Delayed echo of execute
 ```
+
+This sequence is seen on both GF45 and GF110.
+
+It seems the value that's decoded when the line isn't high is the same `288` value in tag 1 (on both lenses) and doesn't correlate to anything meaningful?
 
 Plotting the values for the captures using GF45 looks fairly reasonable.
 
@@ -571,7 +531,25 @@ Plotting the values for the captures using GF45 looks fairly reasonable.
 
 ![focus-af-targetb-slow-run2](images/focus-af-targetb-slow-run2.png)
 
-It seems the value that's decoded when the line isn't high is the same flat value and doesn't correlate to anything?
+
+
+> TODO: investigate how the body asks for different speeds of motor movement
+
+
+
+
+
+A feedback signal from the lens in `0x08` messages follows the BE16 format, i.e.  `rx ss ss 08 cc`.
+
+The feedback value is sometimes `32767` which is `2^15 - 1` and would probably be the end of the encoder's range. If that value is seen we'd treat it as a sentinel/health update but probably not a valid position.
+
+The focus feedback values don't seem valid outside of active focus actuation regions.
+
+> TODO: Motor feedback field discussion/details
+
+
+
+
 
 The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much finer focus control available. This is backed up by focus sweep captures showing ~17x larger span of values:
 
@@ -579,59 +557,6 @@ The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much f
 | ----- | ------------- | ------------ | ---------- | -------------- | ------------ | ---------- |
 | GF110 | -927 .. 22638 | 23565 counts | ~14.5 bits | -845 .. 22638  | 23483 counts | ~14.5 bits |
 | GF45  | -163 .. 1235  | 1398 counts  | ~10.5 bits | -162 .. 1235   | 1397 counts  | ~10.5 bits |
-
-## Zoom Feedback
-
-Both of my GF lenses are primes, but there must be a field(s) which provide feedback on zoom position or focal length so the correct exif data can be written when using those lenses.
-
-> iIt would be much appreciated if anyone is able to capture short, clean sequences before and after a manual change to the zoom, with and/or without taking a photo in between. Including either the photos or a copy of the exif of photos taken during the capture may allow for additional correlation
-
-
-
-## Image Stabilisation
-
-Neither of my lenses have IS, but I'd likely expect a field between the camera/lens that either enables/disables it, or potentially streams other information.
-
-Enable/disable switch state is likely sent over the protocol, and activation/status for a given photo is visible in EXIF at least.
-
-> I'd appreciate if anyone is able to capture short, clean sequences before and after enabling the IS through a camera action. If possible, additional captures with no, some single bumps, and larger oscillating behaviour in a single axis of rotation may also help. 
-
-
-
-## Teleconverter
-
-I've seen examples/discussion online of the EXIF metadata being correctly displayed when a teleconverter is used, i.e. GF 250mm f4 reads as 350mm f5.6, along with mentions that the depth-of-field scale is correct.
-
-This means the teleconverters are active. Electrically I'd expect it to be implemented in a daisy-chain architecture, and either the body/lens is aware of this during startup, additional packets are added in either/both directions, or it modifies packets in flight.
-
-> If you have access to a teleconverter, I'd love to see captures with and without the TC attached for a given lens, with the iris ring rotated and focus/zoom behaviours used.
-
-
-
-## Tilt & Shift Feedback
-
-From some searches online, it appears that rotation and shift values are available in EXIF, it's unclear if tilt fields contain usable data? According to Fuji's GF 30mm page, 
-
-> "For every image made with GF30mmF5.6 T/S, a built-in sensor detects and records the amount of shift and rotation dialled in"
-
-We'd expect to see the value(s) communicated over this protocol to the body for saving in the EXIF data
-
-> If you're fortunate enough to have access to TS lenses, I'd appreciate a series of logic captures which cover small increments in a single axis, ideally labelled with the starting and ending positions. If photos for each capture or extracted EXIF can be included that may help as well. 
->
-> - Shift and tilt at zero
-> - Positive shift
-> - Negative shift
-> - Positive tilt
-> - Negative tilt
-> - Rotation?
-
-
-
-## Power Zoom
-
-The cinema focused 'GF32-90mm t3.5 PZ OIS' has geared rings for focus/zoom/iris as well as selection switches for focus, zoom, and OIS enable. There's a rocker on the lens for controlling the power-zoom.
-
-The switches are likely communicated to the body. The power-zoom rocker value and/or setpoint are likely communicated to the lens. I'd expect this lens to use a similar protocol, but there's a chance its rather different due to cinema-leaning market.
 
 
 
@@ -667,13 +592,13 @@ These ones are partially known as iris/focus ring and command packets but didn't
 |  2853 | `tx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `00 01 08 42`, `00 10 08 72`                               |
 |  2852 | `rx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `ff f5 08 72`, `fc b4 08 78`, `04 a3 08 48`, `ff d9 08 56` |
 
-May be some kind of feedback byte,
+May be some kind of general feedback byte,
 
 - Feedback index around iris events?
   - Body sends `00 01 08 82`
   - Lens returns `<aperture_index> 00 08 <tail>` where index `00 -> f2.8` and `15 = f32` for GF45?
   - 
-- Dynamic looking feedback packets around focus events
+- Dynamic looking feedback packets around focus motor events are known
   - `rx <dynamic_hi> <dynamic_lo> 08 <tail>, where tail upper2b = 1`
 
 
@@ -764,14 +689,14 @@ It's probably not wise to analyse against that shape though.
 
 ## Tail/Status Byte
 
-Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's a little better understood as a bitfield/structure with some stateful information.
+Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's a little better understood as a bitfield/structure with some stateful information and **it does not contain a CRC**. 
 
 Using all the captured packets, de-duplicating and then sorting on 'command byte' and payload to find different header bytes for the same packet.
 
 - Also filtered out all 'readout' packets that are an artifact of the SPI behaviour `00 00 00 00`.
 - Assuming packets from the body and lens use the same behaviour, but the corpus tracks which device/trace the packets are seen in.
 
-Looking over the headers, there were some under-represented bits on repeated packets that I'd expect if it were a CRC or a counter. 
+Looking over the headers, there were some under-represented bits on repeated packets with different final-bytes.
 
 **Bit 0 is always low.** This seems to hold for *all* transactions I've captured (89,984 at time of observation). 
 
@@ -835,3 +760,63 @@ There are only 3 captured packets with variation in the remaining bits.
 | `0f 00 88` |  1,640 |        3 | `0` -> 1,635<br>`1` -> 3<br>`2` -> 2        | `1` -> 1,635<br>`0` -> 5      | `0a` -> 1,635<br>`0b` -> 5      |
 
 It's a bit hard to tell right now if the next bit is independent, it's another two-bit field instead of just bit-1, or if it's a larger enum/status field? For the limited set of `88` packets here, bit 2 appears high in the longer sequences? TODO: see if that holds up across the dataset.
+
+
+
+
+
+# Untestable Fields
+
+## Zoom Feedback
+
+Both of my GF lenses are primes, but there must be a field(s) which provide feedback on zoom position or focal length so the correct exif data can be written when using those lenses.
+
+> iIt would be much appreciated if anyone is able to capture short, clean sequences before and after a manual change to the zoom, with and/or without taking a photo in between. Including either the photos or a copy of the exif of photos taken during the capture may allow for additional correlation
+
+
+
+## Image Stabilisation
+
+Neither of my lenses have IS, but I'd likely expect a field between the camera/lens that either enables/disables it, or potentially streams other information.
+
+Enable/disable switch state is likely sent over the protocol, and activation/status for a given photo is visible in EXIF at least.
+
+> I'd appreciate if anyone is able to capture short, clean sequences before and after enabling the IS through a camera action. If possible, additional captures with no, some single bumps, and larger oscillating behaviour in a single axis of rotation may also help. 
+
+
+
+## Teleconverter
+
+I've seen examples/discussion online of the EXIF metadata being correctly displayed when a teleconverter is used, i.e. GF 250mm f4 reads as 350mm f5.6, along with mentions that the depth-of-field scale is correct.
+
+This means the teleconverters are active. Electrically I'd expect it to be implemented in a daisy-chain architecture, and either the body/lens is aware of this during startup, additional packets are added in either/both directions, or it modifies packets in flight.
+
+> If you have access to a teleconverter, I'd love to see captures with and without the TC attached for a given lens, with the iris ring rotated and focus/zoom behaviours used.
+
+
+
+## Tilt & Shift Feedback
+
+From some searches online, it appears that rotation and shift values are available in EXIF, it's unclear if tilt fields contain usable data? According to Fuji's GF 30mm page, 
+
+> "For every image made with GF30mmF5.6 T/S, a built-in sensor detects and records the amount of shift and rotation dialled in"
+
+We'd expect to see the value(s) communicated over this protocol to the body for saving in the EXIF data
+
+> If you're fortunate enough to have access to TS lenses, I'd appreciate a series of logic captures which cover small increments in a single axis, ideally labelled with the starting and ending positions. If photos for each capture or extracted EXIF can be included that may help as well. 
+>
+> - Shift and tilt at zero
+> - Positive shift
+> - Negative shift
+> - Positive tilt
+> - Negative tilt
+> - Rotation?
+
+
+
+## Power Zoom
+
+The cinema focused 'GF32-90mm t3.5 PZ OIS' has geared rings for focus/zoom/iris as well as selection switches for focus, zoom, and OIS enable. There's a rocker on the lens for controlling the power-zoom.
+
+The switches are likely communicated to the body. The power-zoom rocker value and/or setpoint are likely communicated to the lens. I'd expect this lens to use a similar protocol, but there's a chance its rather different due to cinema-leaning market.
+
