@@ -76,7 +76,7 @@ On every third burst, we have 2 additional transactions for a 6 transaction 'gro
 
 For both the 4 and 6 packet bursts, the first bytes marked as `0x??` seem to vary between subsequent bursts, but a random sampling of 5 bursts in a row gives a feel that they're not immediately exhibiting packet counting behaviour.
 
-The final bytes marked `0x??` are most likely a CRC, but it's not clear yet.
+> The final bytes marked `0x??` were not understood when this was written and were left alone due to their percieved unstable nature.
 
 
 
@@ -221,12 +221,14 @@ rx 00 16 0c ??
 
 The body sends `00 00 00 00` during these packets, which probably implies the body reads a 'data ready' field from the lens?
 
-Maybe something like this (low confidence)?
+> The `0c` command is also used for focus ring incremental readout, but the top two bits of the last byte are always low for iris ring packets, `bit 6..7 = 00`.
+
+Sequenced something like this (low confidence)?
 
 ```
 tx 00 00 0c ??       body asks for ring/aperture-index state
 rx 00 XX 0c ??       lens reports ring/aperture ordinal or changed-position value
-tx/rx n 00 8c ??     tagged transport/status wrapper for that exchange
+tx/rx n 00 8c ??     tagged transport/status wrapper for that exchange?
 rx n 00 80 ??        final status/result acknowledgement
 ```
 
@@ -271,13 +273,13 @@ f29 -> f32     rx 00 16 0c 06
 >
 > Update: On the GF110mm which has f2.0 to f22 range, there's the same number of third-stops over the range, they map against index the same way. 
 >
-> Surely there are lenses in the GF ecosystem with more/fewer configurable apertures?
+> There are lenses in the GF ecosystem such as the 80mm f1.7 to 22 which should have more configurable apertures? Are there lenses with fewer?
 
 ![45mm lens iris against index value, increases in clear steps over time during sweep capture](images/iris-ring-sweeps-combined.png)
 
 ![110mm lens iris against index value, increases in clear steps over time during sweep capture](images/110mm-iris-ring-sweeps-combined.png)
 
-Now there's a known packet behaviour `00 XX 0c YY`, poking at the relationship to the CRC byte is possibly an option?
+Now there's a known packet behaviour `00 XX 0c YY`, poking at the relationship(s) to the final byte may be easier?
 
 A full observation example set:
 
@@ -308,7 +310,9 @@ A full observation example set:
 
 The lenses also have a `A` automatic mode selection position and a `C` custom position for camera-side control over the aperture. I forgot to capture these with the GF45, but did with GF110.
 
-When entering AUTO, a 'new' `00 00 0c 30` packet was visible on the transition.
+When entering AUTO there was less obvious packet behaviour as it also doesn't allow dof-preview.
+
+I noticed a 'new' `00 00 0c 30` packet was visible, but later review shows it in other manual iris sweeps as well.
 
 There wasn't a visible change when clicking the ring to custom mode (camera showed f4). There was a notable change of `00 80 08 24` packets to `08 80 08 26` though?
 
@@ -482,7 +486,7 @@ Clockwise captures are positive values, counterclockwise are negative. They seem
 
 The behaviour appears the same on the GF45 and GF110mm lenses, even though the GF110 has a much longer throw.
 
-The body seems to query the value with `00 00 0c b2`, and the lens responds two transactions later.
+The **body queries the increment value** with `00 00 0c b2`, and the lens responds two transactions later.
 
 ```
 tx 00 00 0c b2       body asks for ring-motion state
@@ -490,6 +494,8 @@ tx 00 00 0c b2       body asks for ring-motion state
 tx 00 00 00 00
 rx ss ss 0c cc       lens reports signed relative value
 ```
+
+The `0c` is also seen used for the iris control ring. For focus packets, the top two bits of the last byte are always high (`bit 6..7 = 11`).
 
 In the captures where the manual focus mode was active and the motor would move, we see additional `0x15` packets which I'll look into/document in their own section.
 
@@ -574,20 +580,72 @@ The GF110mm has a nicer ultrasonic or linear motor, and there seems to be much f
 | GF110 | -927 .. 22638 | 23565 counts | ~14.5 bits | -845 .. 22638  | 23483 counts | ~14.5 bits |
 | GF45  | -163 .. 1235  | 1398 counts  | ~10.5 bits | -162 .. 1235   | 1397 counts  | ~10.5 bits |
 
+## Zoom Feedback
+
+Both of my GF lenses are primes, but there must be a field(s) which provide feedback on zoom position or focal length so the correct exif data can be written when using those lenses.
+
+> iIt would be much appreciated if anyone is able to capture short, clean sequences before and after a manual change to the zoom, with and/or without taking a photo in between. Including either the photos or a copy of the exif of photos taken during the capture may allow for additional correlation
+
+
+
+## Image Stabilisation
+
+Neither of my lenses have IS, but I'd likely expect a field between the camera/lens that either enables/disables it, or potentially streams other information.
+
+Enable/disable switch state is likely sent over the protocol, and activation/status for a given photo is visible in EXIF at least.
+
+> I'd appreciate if anyone is able to capture short, clean sequences before and after enabling the IS through a camera action. If possible, additional captures with no, some single bumps, and larger oscillating behaviour in a single axis of rotation may also help. 
+
+
+
+## Teleconverter
+
+I've seen examples/discussion online of the EXIF metadata being correctly displayed when a teleconverter is used, i.e. GF 250mm f4 reads as 350mm f5.6, along with mentions that the depth-of-field scale is correct.
+
+This means the teleconverters are active. Electrically I'd expect it to be implemented in a daisy-chain architecture, and either the body/lens is aware of this during startup, additional packets are added in either/both directions, or it modifies packets in flight.
+
+> If you have access to a teleconverter, I'd love to see captures with and without the TC attached for a given lens, with the iris ring rotated and focus/zoom behaviours used.
+
+
+
+## Tilt & Shift Feedback
+
+From some searches online, it appears that rotation and shift values are available in EXIF, it's unclear if tilt fields contain usable data? According to Fuji's GF 30mm page, 
+
+> "For every image made with GF30mmF5.6 T/S, a built-in sensor detects and records the amount of shift and rotation dialled in"
+
+We'd expect to see the value(s) communicated over this protocol to the body for saving in the EXIF data
+
+> If you're fortunate enough to have access to TS lenses, I'd appreciate a series of logic captures which cover small increments in a single axis, ideally labelled with the starting and ending positions. If photos for each capture or extracted EXIF can be included that may help as well. 
+>
+> - Shift and tilt at zero
+> - Positive shift
+> - Negative shift
+> - Positive tilt
+> - Negative tilt
+> - Rotation?
+
+
+
+## Power Zoom
+
+The cinema focused 'GF32-90mm t3.5 PZ OIS' has geared rings for focus/zoom/iris as well as selection switches for focus, zoom, and OIS enable. There's a rocker on the lens for controlling the power-zoom.
+
+The switches are likely communicated to the body. The power-zoom rocker value and/or setpoint are likely communicated to the lens. I'd expect this lens to use a similar protocol, but there's a chance its rather different due to cinema-leaning market.
+
 
 
 ## Unknown Commands
 
 Filtering and sorting for packets which are less understood. Over time these should be removed from the table into their own sections.
 
-These ones are known but didn't get classified by the filter - TODO work out why?
+These ones are partially known as iris/focus ring and command packets but didn't get classified by the filter due to different upper-2 bits. TODO: document behaviour/categorisation of these packets in relevant sections
 
-| Count | Dir | Msg | ACK | Upper2 | Reason | Lenses | Captures | Top packets |
-| ---: | --- | --- | --- | ---: | --- | --- | ---: | --- |
-| 2804 | `rx` | `0c` | `False` | 2 | candidate | GF110,GF45 | 25 | `00 01 0c 92`, `00 02 0c b4`, `ff fe 0c ac`, `ff ff 0c 8c` |
-| 2804 | `tx` | `0c` | `False` | 2 | candidate | GF110,GF45 | 25 | `00 00 0c b2` |
-| 2683 | `rx` | `15` | `False` | 0 | candidate | GF110,GF45 | 58 | `09 c4 15 2a, 0b 3c 15 2c, 01 f4 15 18, 0d 88 15 0c` |
-| 2683 | `tx` | `15` | `False` | 0 | candidate | GF110,GF45 | 58 | `09 c4 15 2a, 0b 3c 15 2c, 01 f4 15 18, 0d 88 15 0c` |
+| Count | Dir | Msg | ACK | Upper2 | Reason | Lenses | Captures | Top packets |  |
+| ---: | --- | --- | --- | ---: | --- | --- | ---: | --- | --- |
+| 2804 | `rx` | `0c` | `False` | 2 | candidate | GF110,GF45 | 25 | `00 01 0c 92`, `00 02 0c b4`, `ff fe 0c ac`, `ff ff 0c 8c` | Lens focus ring, |
+| 2683 | `rx` | `15` | `False` | 0 | candidate | GF110,GF45 | 58 | `09 c4 15 2a, 0b 3c 15 2c, 01 f4 15 18, 0d 88 15 0c` |  |
+| 2683 | `tx` | `15` | `False` | 0 | candidate | GF110,GF45 | 58 | `09 c4 15 2a, 0b 3c 15 2c, 01 f4 15 18, 0d 88 15 0c` |  |
 
 
 
@@ -609,6 +667,17 @@ These ones are known but didn't get classified by the filter - TODO work out why
 |  2853 | `tx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `00 01 08 42`, `00 10 08 72`                               |
 |  2852 | `rx` | `08` | `False` |      1 | undecoded | GF110,GF45 |       58 | `ff f5 08 72`, `fc b4 08 78`, `04 a3 08 48`, `ff d9 08 56` |
 
+May be some kind of feedback byte,
+
+- Feedback index around iris events?
+  - Body sends `00 01 08 82`
+  - Lens returns `<aperture_index> 00 08 <tail>` where index `00 -> f2.8` and `15 = f32` for GF45?
+  - 
+- Dynamic looking feedback packets around focus events
+  - `rx <dynamic_hi> <dynamic_lo> 08 <tail>, where tail upper2b = 1`
+
+
+
 ### `0x09`
 
 | Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
@@ -617,6 +686,51 @@ These ones are known but didn't get classified by the filter - TODO work out why
 |  7704 | `tx` | `09` | `False` |      2 | undecoded | GF110,GF45 |       94 | `00 00 09 a6`                                              |
 |  2778 | `rx` | `09` | `False` |      3 | undecoded | GF110,GF45 |       66 | `00 01 09 c8, 00 00 09 e8, 00 03 09 ca, 00 02 09 ea`       |
 |  2778 | `tx` | `09` | `False` |      3 | undecoded | GF110,GF45 |       66 | `00 00 09 e8`                                              |
+
+Appears to splits into two families by upper2 state.
+
+When `upper2 = 2` we see it in extended idle/status sequence (6 transaction burst variant)
+
+| Slot | Camera TX        | Lens RX          |
+| ---- | ---------------- | ---------------- |
+| 0    | `00 00 08 20`    | -                |
+| 1    | `0b 10 80 3a`    | `08 00 88 32`    |
+| 2    | `00 00 09 a6` <- | `00 00 08 20`    |
+| 3    | `0c 00 88 12`    | `0b 00 89 90`    |
+| 4    | -                | `00 16 09 bc` <- |
+| 5    | `08 00 89 b8`    | `0c 00 80 32`    |
+
+The body request is `00 00 09 a6`, with the lens response containing payloads like:
+
+```
+00 11 09 96
+00 12 09 b8
+00 13 09 98
+00 14 09 ba
+00 15 09 9a
+00 16 09 bc
+```
+
+
+
+When `upper2 = 3` it's part of a active sequence not seen during 'idle refresh' 4-burst groups.
+
+This appears sequenced with `0x0f` and `0x08`:
+
+```
+00 00 0f c0
+00 00 09 e8
+00 01 08 42
+```
+
+The 0x09 lens response has a payload value, observed as:
+
+```
+00 00 09 e8
+00 01 09 c8
+00 02 09 ea
+00 03 09 ca
+```
 
 
 
@@ -670,7 +784,7 @@ The focus and iris settings use the same `0c` command byte, but when looking at 
 - For focus motor `0x15` packets, the upper bits evenly distribute with `00`/`01`/`10` but never `11`. 
 - Execute/sync commands are `11`.
 
-Looking at behaviour around 'most understood' packets for iris and focus: 
+Looking at behaviour around 'most understood' packets for iris and focus there is a fairly obvious pattern in the remaining bits:
 
 | Direction | CMD    | Prefix     | Upper-2b values | Final bits 1..5 values |
 | --------- | ------ | ---------- | --------------- | ---------------------- |
@@ -681,25 +795,43 @@ Looking at behaviour around 'most understood' packets for iris and focus:
 | RX/TX     | `0x15` | `03 6b 15` | 0, 2            | `1d`, `1e`             |
 | RX/TX     | `0x15` | `01 23 15` | 1, 2            | `11`, `11`             |
 
-The table shows that with the upper bits taken into account, the remaining data in the trailing byte has one stable value.
+The table shows that with the upper bits taken into account, the remaining data in the trailing byte has a stable value and a one-bit field that varies.
 
 Looking at the larger set of captures, only 80 of 5153 deduplicated packets have multiple tail byte options for an otherwise identical packet. When taking the upper two bits into consideration, the remaining 5 bits have fewer variations and they aren't random as expected for a signature or checksum.
 
-This **rules out sequence numbering** or global counting behaviours. And I'm far less convinced the remaining field(s) represent any kind of checksum or signature.
+This immediately **rules out sequence numbering** or global counting behaviours. And I'm now convinced the remaining field(s) do not represent any kind of checksum or signature.
 
-| 'Prefix' | Count | Variants | Upper-2b counts | Final bits 1-5 |
-| --- | ---: | ---: | --- | --- |
-| `08 00 88` | 45,616 | 3 | `0` -> 39,458<br>`1` -> 5,658<br>`2` -> 500 | `19` -> 39,458<br>`1a` -> 6,158 |
-| `00 00 08` | 36,159 | 3 | `0` -> 36,140<br>`2` -> 18<br>`1` -> 1 | `10` -> 36,140<br>`11` -> 19 |
-| `08 00 95` | 4,132 | 3 | `0` -> 2,790<br>`2` -> 725<br>`1` -> 617 | `14` -> 2,790<br>`15` -> 1,342 |
-| `00 01 08` | 3,067 | 3 | `1` -> 2,690<br>`2` -> 270<br>`0` -> 107 | `01` -> 2,960<br>`00` -> 107 |
-| `0e 00 95` | 1,969 | 3 | `2` -> 719<br>`1` -> 628<br>`0` -> 622 | `0d` -> 1,347<br>`0c` -> 622 |
-| `0a 00 95` | 1,937 | 3 | `2` -> 713<br>`1` -> 615<br>`0` -> 609 | `1d` -> 1,328<br>`1c` -> 609 |
-| `0f 00 95` | 1,838 | 3 | `1` -> 725<br>`2` -> 628<br>`0` -> 485 | `11` -> 1,353<br>`10` -> 485 |
-| `0b 00 95` | 1,805 | 3 | `1` -> 707<br>`2` -> 615<br>`0` -> 483 | `01` -> 1,322<br>`00` -> 483 |
-| `0b 00 88` | 1,644 | 3 | `0` -> 1,638<br>`2` -> 4<br>`1` -> 2 | `05` -> 1,638<br>`06` -> 6 |
-| `0f 00 88` | 1,640 | 3 | `0` -> 1,635<br>`1` -> 3<br>`2` -> 2 | `15` -> 1,635<br>`16` -> 5 |
-| `0d 00 95` | 1,489 | 3 | `1` -> 719<br>`2` -> 626<br>`0` -> 144 | `09` -> 1,345<br>`08` -> 144 |
-| `09 00 95` | 1,464 | 3 | `1` -> 713<br>`2` -> 617<br>`0` -> 134 | `19` -> 1,330<br>`18` -> 134 |
+Looking over the full set of packets, the remaining byte's bit 1 (or bit 0 of the 5-bit field) seems to impact the largest number of packets, responsible for the variation in 45 of 80 relevant packet examples. So pulling this bit out during review/parsing and trying to find correlations in burst sequences or with hardware behaviours is a good next step.
 
-So the main work will be figuring out what relationship the bits `1..5` have with the payload.
+| Prefix     | Bits 1..5 variants | After masking bit 0 | Notes                             |
+| ---------- | ------------------ | ------------------- | --------------------------------- |
+| `00 00 08` | `0x10`, `0x11`     | `0x10`              | Common idle/status request shape  |
+| `08 00 95` | `0x14`, `0x15`     | `0x14`              | `0x95` ACK family                 |
+| `08 00 89` | `0x1c`, `0x1d`     | `0x1c`              | `0x89` ACK family                 |
+| `00 01 08` | `0x00`, `0x01`     | `0x00`              | Variant of `0x08`?                |
+| `00 00 0c` | `0x18`, `0x19`     | `0x18`              | Focus-ring / aperture-ring family |
+
+Considering that bit reduces the variation on the most common packets captured:
+
+
+| Prefix | Count | Variants | Bit 6..7 | Bit 1 | Remaining bits 2..5 |
+| --- | ---: | ---: | --- | --- | --- |
+| `00 00 08` | 36,159 | 3 | `0` -> 36,140<br>`1` -> 1<br>`2` -> 18 | `0` -> 36,140<br>`1` -> 19 | `08` -> 36,159 |
+| `08 00 95` | 4,132 | 3 | `0` -> 2,790<br>`1` -> 617<br>`2` -> 725 | `0` -> 2,790<br>`1` -> 1,342 | `0a` -> 4,132 |
+| `00 01 08` | 3,067 | 3 | `0` -> 107<br>`1` -> 2,690<br>`2` -> 270 | `0` -> 107<br>`1` -> 2,960 | `00` -> 3,067 |
+| `0e 00 95` | 1,969 | 3 | `0` -> 622<br>`1` -> 628<br>`2` -> 719 | `0` -> 622<br>`1` -> 1,347 | `06` -> 1,969 |
+| `0a 00 95` | 1,937 | 3 | `0` -> 609<br>`1` -> 615<br>`2` -> 713 | `0` -> 609<br>`1` -> 1,328 | `0e` -> 1,937 |
+| `0f 00 95` | 1,838 | 3 | `0` -> 485<br>`1` -> 725<br>`2` -> 628 | `0` -> 485<br>`1` -> 1,353 | `08` -> 1,838 |
+| `0b 00 95` | 1,805 | 3 | `0` -> 483<br>`1` -> 707<br>`2` -> 615 | `0` -> 483<br>`1` -> 1,322 | `00` -> 1,805 |
+| `0d 00 95` | 1,489 | 3 | `0` -> 144<br>`1` -> 719<br>`2` -> 626 | `0` -> 144<br>`1` -> 1,345 | `04` -> 1,489 |
+| `09 00 95` | 1,464 | 3 | `0` -> 134<br>`1` -> 713<br>`2` -> 617 | `0` -> 134<br>`1` -> 1,330 | `0c` -> 1,464 |
+
+There are only 3 captured packets with variation in the remaining bits.
+
+| Prefix     |  Count | Variants | Bit 6..7                                    | Bit 1                         | Remaining bits 2..5             |
+| ---------- | -----: | -------: | ------------------------------------------- | ----------------------------- | ------------------------------- |
+| `08 00 88` | 45,616 |        3 | `0` -> 39,458<br>`1` -> 5,658<br>`2` -> 500 | `1` -> 39,458<br>`0` -> 6,158 | `0c` -> 39,458<br>`0d` -> 6,158 |
+| `0b 00 88` |  1,644 |        3 | `0` -> 1,638<br>`1` -> 2<br>`2` -> 4        | `1` -> 1,638<br>`0` -> 6      | `02` -> 1,638<br>`03` -> 6      |
+| `0f 00 88` |  1,640 |        3 | `0` -> 1,635<br>`1` -> 3<br>`2` -> 2        | `1` -> 1,635<br>`0` -> 5      | `0a` -> 1,635<br>`0b` -> 5      |
+
+It's a bit hard to tell right now if the next bit is independent, it's another two-bit field instead of just bit-1, or if it's a larger enum/status field? For the limited set of `88` packets here, bit 2 appears high in the longer sequences? TODO: see if that holds up across the dataset.
