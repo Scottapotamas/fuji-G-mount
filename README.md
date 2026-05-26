@@ -55,3 +55,6 @@ Several active (3rd party) lens adaptors *are* on the market, allowing smart con
   - Commanding absolute focus motor position
   - Some hazy details on the packet shapes
 
+# References & Acknoledgements
+
+- A [large mirror of firmware updates](https://u.pcloud.link/publink/show?code=kZRGzJXZA5zjOTgVm2FJjdvTIG1UekBLWefV#/filemanager?folder=7261419858) here by [Manzur Fahim on DPreview](https://www.dpreview.com/forums/threads/fujifilm-gf-lens-firmware-not-available-anymore.4824834/post-68549141).

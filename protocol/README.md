@@ -50,7 +50,7 @@ This is mostly done manually from packet captures of specific actions. Refer to 
 
 ## 'Idle' Packets
 
-When the camera is powered on but is otherwise sitting idle, we see a burst of transactions occur every 40ms. These might not actually be idle, but they don't appear to change with iris control ring, current iris value, or focus ring movement.
+When the camera is powered on but is otherwise sitting idle, we see a burst of transactions occur every 40ms.
 
 These packets represent the bulk of 'noise' when watching packet traces, so understanding, decoding and then filtering them represents a worthwhile effort.
 
@@ -131,7 +131,7 @@ The payload (in hex) is:
 These transactions are from the lens to the body and **describe the lens**. 
 
 - The first section of data is ASCII: `LR106A  FSSNW006GF45mmF2.8 R WR` 
-  - Not sure what the first half means yet.
+  - The first section, `LR106A` is also in the lens firmware as a string with `FSSNW006`. Refer to `/firmware/identity-strings.md`.
   - The last half is obvious obvious, the lens is officially labelled as  `GF45mmF2.8 R WR`.
 - The second block of data in the payload is `2403386605 V` `È` in ASCII, which isn't immediately obvious
   - TODO work out what this data means?
@@ -158,7 +158,7 @@ The payload (in hex) is:
 These transactions are from the lens to the body and **describe the lens**. 
 
 - The first section of data is ASCII: `LR104A  FSSNW104GF110mmF2 R LM WR`
-  - Not sure what the first half means yet.
+  - `LR104A` and `FSSNW104` are identifier strings. Refer to `/firmware/identity-strings.md`
   - The last half is obvious, the lens is officially labelled as `GF110mmF2 R LM WR`.
 - The second block of data in the payload is `05C00024` `È` in ASCII
   - TODO work out what this data means
@@ -645,9 +645,9 @@ The total group of unique command bytes observed is below, entries with listed C
 
 
 
-### Tail/Status Byte
+### Status Byte
 
-Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's a little better understood as a bitfield/structure with some stateful information included.
+Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's known to include some stateful information.
 
 Using all the captured packets, de-duplicating and then sorting on 'command byte' and payload to find different header bytes for the same packet.
 
@@ -682,7 +682,7 @@ The table shows that with the upper bits taken into account, the remaining data 
 
 Looking at the larger set of captures, only 80 of 5153 deduplicated packets have multiple tail byte options for an otherwise identical packet. When taking the upper two bits into consideration, the remaining 5 bits have fewer variations and they aren't random as expected for a signature or checksum.
 
-This immediately **rules out sequence numbering** or global counting behaviours. And I'm now convinced the remaining field(s) do not represent any kind of checksum or signature.
+This immediately **rules out sequence numbering** or global counting behaviours. ~~And I'm now convinced the remaining field(s) do not represent any kind of checksum or signature.~~
 
 Looking over the full set of packets, the remaining byte's bit 1 (or bit 0 of the 5-bit field) seems to impact the largest number of packets, responsible for the variation in 45 of 80 relevant packet examples. So pulling this bit out during review/parsing and trying to find correlations in burst sequences or with hardware behaviours is a good next step.
 
@@ -694,24 +694,11 @@ Looking over the full set of packets, the remaining byte's bit 1 (or bit 0 of th
 | `00 01 08` | `0x00`, `0x01`     | `0x00`              | Variant of `0x08`?                |
 | `00 00 0c` | `0x18`, `0x19`     | `0x18`              | Focus-ring / aperture-ring family |
 
-Considering that bit reduces the variation on the most common packets captured:
-
-
-| Prefix | Count | Variants | Bit 6..7 | Bit 1 | Remaining bits 2..5 |
-| --- | ---: | ---: | --- | --- | --- |
-| `00 00 08` | 36,159 | 3 | `0` -> 36,140<br>`1` -> 1<br>`2` -> 18 | `0` -> 36,140<br>`1` -> 19 | `08` -> 36,159 |
-| `08 00 95` | 4,132 | 3 | `0` -> 2,790<br>`1` -> 617<br>`2` -> 725 | `0` -> 2,790<br>`1` -> 1,342 | `0a` -> 4,132 |
-| `00 01 08` | 3,067 | 3 | `0` -> 107<br>`1` -> 2,690<br>`2` -> 270 | `0` -> 107<br>`1` -> 2,960 | `00` -> 3,067 |
-| `0e 00 95` | 1,969 | 3 | `0` -> 622<br>`1` -> 628<br>`2` -> 719 | `0` -> 622<br>`1` -> 1,347 | `06` -> 1,969 |
-| `0a 00 95` | 1,937 | 3 | `0` -> 609<br>`1` -> 615<br>`2` -> 713 | `0` -> 609<br>`1` -> 1,328 | `0e` -> 1,937 |
-| `0f 00 95` | 1,838 | 3 | `0` -> 485<br>`1` -> 725<br>`2` -> 628 | `0` -> 485<br>`1` -> 1,353 | `08` -> 1,838 |
-| `0b 00 95` | 1,805 | 3 | `0` -> 483<br>`1` -> 707<br>`2` -> 615 | `0` -> 483<br>`1` -> 1,322 | `00` -> 1,805 |
-| `0d 00 95` | 1,489 | 3 | `0` -> 144<br>`1` -> 719<br>`2` -> 626 | `0` -> 144<br>`1` -> 1,345 | `04` -> 1,489 |
-| `09 00 95` | 1,464 | 3 | `0` -> 134<br>`1` -> 713<br>`2` -> 617 | `0` -> 134<br>`1` -> 1,330 | `0c` -> 1,464 |
-
 It's a bit hard to tell right now if the next bit is independent, it's another two-bit field instead of just bit-1, or if it's a larger enum/status field? For the limited set of `88` packets here, bit 2 appears high in the longer sequences?
 
-The 5-bit check value is computed as a truncating sum of 5-bit chunks over the packet, including the upper2 bits in the last byte.
+> I couldn't figure this out after lots of different attempts, and resorted to analysis of lens update files to find clues
+
+The **5-bit check value is computed as a truncating sum of 5-bit chunks** over the packet, including the upper2 bits in the last byte.
 
 ```
 g0 = b0[7:3]
@@ -1061,7 +1048,29 @@ Enable/disable switch state is likely sent over the protocol, and activation/sta
 
 > I'd appreciate if anyone is able to capture short, clean sequences before and after enabling the IS through a camera action. If possible, additional captures with no, some single bumps, and larger oscillating behaviour in a single axis of rotation may also help. 
 
+Firmware analysis on IS enabled GF lenses has an `imgstabi` module with 6 fields.
 
+```
+imgstabi
+
+手ブレスルー画開始
+  camera-shake / through-image start
+
+手ブレ補正S1AE開始 / 終了
+  shake correction S1AE start / end
+
+手ブレ補正S1AF開始 / 終了
+  shake correction S1AF start / end
+
+手ブレ補正S1LOCK開始 / 終了
+  shake correction S1LOCK start / end
+
+手ブレ補正S2露光開始 / 終了
+  shake correction S2 exposure start / end
+
+手ブレ補正S2動画開始 / 終了
+  shake correction S2 movie start / end
+```
 
 ## Teleconverter
 
@@ -1071,7 +1080,7 @@ This means the teleconverters are active. Electrically I'd expect it to be imple
 
 > If you have access to a teleconverter, I'd love to see captures with and without the TC attached for a given lens, with the iris ring rotated and focus/zoom behaviours used.
 
-
+Firmware analysis of GF250 somewhat matches my guess, the lens knows the model number and identification strings for the teleconverter.
 
 ## Tilt & Shift Feedback
 
