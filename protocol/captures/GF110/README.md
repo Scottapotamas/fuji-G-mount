@@ -84,7 +84,12 @@ Power-up while holding DISP/BACK button brings up the update menu. `power-into-f
 
 Display reports "Body version 3.11" and "Lens version 1.10".
 
+# Firmware Update
+
+Turns out an update was available. We started on 1.10, updated to 1.20 dated `27-04-2023`.
+
 `fw-update-1p20.sal` is the entire sequence.
+
 # State Changes
 
 Camera otherwise idle while changing the 3-position focus mode lever.

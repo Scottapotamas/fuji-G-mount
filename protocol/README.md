@@ -4,7 +4,9 @@ Sniffing of the communications between the body and lens is achieved with a modi
 
 This document has been reworked several times as my understanding of the protocol has developed. Apologies for mixed 'exploratory log' and 'findings' which sometimes includes extra information.
 
-### Logic Analyser Captures
+
+
+**Logic Analyser Captures**
 
 Useful trace files are committed to the `captures` folder. Most analysis was done against the GF45 dumps, with later checks against the GF110.
 
@@ -46,7 +48,149 @@ When I'm listing tx/rx pairs in a given transaction in this document, that offse
 
 # Packet Exploration
 
-This is mostly done manually from packet captures of specific actions. Refer to the `/protocol/captures/` folder for the raw captures and descriptions of the setups.
+While I've done this against/for the G-mount, poking at lens firmware update files and packet captures from [X-mount by Feiko Nanninga aka 'clonejo'](https://codeberg.org/clonejo/fuji-mount) allowed me to compare behaviour.
+
+## Packet Structure
+
+In wire-order most packets are 4-bytes of the form `payload payload command status` where useful payloads are typically big-endian signed 16-bit values or low value indexes.
+
+Throughout the docs I've been treating the seemingly unstable last byte as some kind of checksum byte, but it's actually a structure with an extra field which is important for several command types.
+
+### Message/Command
+
+The command byte (third byte sent over the wire) includes an 'ack' flag at bit 7, i.e. `cmd | 0x80`, demonstrated on most currently known packets between tx and rx.
+
+The total group of unique command bytes observed is below, entries with listed CMD or ACK values are in captured files. Currently the possible `0x00` command has not been observed.
+
+| CMD    | ACK/Response | Decode status                                |
+| ------ | ------------ | -------------------------------------------- |
+| —      | `0x80`       | Transport/status, not really decoded         |
+| `0x05` | `0x85`       | Not documented/decoded                       |
+| `0x06` | `0x86`       | Not documented/decoded                       |
+| `0x07` |              | Not documented/decoded                       |
+| `0x08` | `0x88`       | Aperture/Focus feedback, mostly decoded.     |
+| `0x09` | `0x89`       | Not decoded                                  |
+| `0x10` | `0x90`       | Not documented/decoded                       |
+| `0x0c` | `0x8c`       | Aperture/focus control ring, mostly decoded. |
+| `0x0f` | `0x8f`       | Not decoded                                  |
+| `0x15` | `0x95`       | Focus motor, mostly decoded                  |
+| `0x16` | `0x96`       | Not documented/decoded                       |
+| `0x18` | `0x98`       | Aperture setpoint, mostly decoded            |
+| `0x20` | `0xa0`       | Not documented/decoded                       |
+| `0x25` |              | Not documented/decoded                       |
+| `0x28` | `0xa8`       | Not documented/decoded                       |
+| `0x2a` | `0xaa`       | Not documented/decoded                       |
+| `0x32` |              | Not documented/decoded                       |
+| `0x3c` |              | Not documented/decoded                       |
+| `0x3f` | `0xbf`       | Execute/latch, mostly decoded                |
+
+
+
+### Status Byte
+
+Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's known to include some stateful information.
+
+Using all the captured packets, de-duplicating and then sorting on 'command byte' and payload to find different header bytes for the same packet.
+
+- Also filtered out all 'readout' packets that are an artifact of the SPI behaviour `00 00 00 00`.
+- Assuming packets from the body and lens use the same behaviour, but the corpus tracks which device/trace the packets are seen in.
+
+Looking over the headers, there were some under-represented bits on repeated packets with different final-bytes.
+
+**Bit 0 is always low.** This seems to hold for *all* transactions I've captured (89,984 at time of observation). 
+
+Luckily,  `09 00 88`  shows that **rx and tx directions can have the same final byte for an identical payload** it's less likely there's a 'camera' or 'lens' style send/recv bit in the field. This also means it's less likely that both sides are maintaining some shared incremental packet count.
+
+The focus and iris settings use the same `0c` command byte, but when looking at the **top two bits** of the last byte, 
+
+- Iris ring `0x0c` packets are always(?) `upper = 0` across 100+ examples.
+- Focus ring `0x0c` packets are always(?) `upper = 2` across 600+ examples.
+- For focus motor `0x15` packets, the upper bits evenly distribute with `00`/`01`/`10` but never `11`. 
+- Execute/sync commands are `11`.
+
+Looking at behaviour around 'most understood' packets for iris and focus there is a fairly obvious pattern in the remaining bits:
+
+| Direction | CMD    | Prefix     | Upper-2b values | Final bits 1..5 values |
+| --------- | ------ | ---------- | --------------- | ---------------------- |
+| RX        | `0x0c` | `00 02 0c` | 2, 0            | `1a`, `19`             |
+| RX        | `0x0c` | `00 03 0c` | 2, 0            | `0a`, `09`             |
+| TX        | `0x0c` | `00 00 0c` | 2, 0            | `19`, `18`             |
+| RX/TX     | `0x15` | `01 f4 15` | 0, 2            | `0c`, `0d`             |
+| RX/TX     | `0x15` | `03 6b 15` | 0, 2            | `1d`, `1e`             |
+| RX/TX     | `0x15` | `01 23 15` | 1, 2            | `11`, `11`             |
+
+The table shows that with the upper bits taken into account, the remaining data in the trailing byte has a stable value and a one-bit field that varies.
+
+Looking at the larger set of captures, only 80 of 5153 deduplicated packets have multiple tail byte options for an otherwise identical packet. When taking the upper two bits into consideration, the remaining 5 bits have fewer variations and they aren't random as expected for a signature or checksum.
+
+This immediately **rules out sequence numbering** or global counting behaviours. ~~And I'm now convinced the remaining field(s) do not represent any kind of checksum or signature.~~
+
+Looking over the full set of packets, the remaining byte's bit 1 (or bit 0 of the 5-bit field) seems to impact the largest number of packets, responsible for the variation in 45 of 80 relevant packet examples. So pulling this bit out during review/parsing and trying to find correlations in burst sequences or with hardware behaviours is a good next step.
+
+| Prefix     | Bits 1..5 variants | After masking bit 0 | Notes                             |
+| ---------- | ------------------ | ------------------- | --------------------------------- |
+| `00 00 08` | `0x10`, `0x11`     | `0x10`              | Common idle/status request shape  |
+| `08 00 95` | `0x14`, `0x15`     | `0x14`              | `0x95` ACK family                 |
+| `08 00 89` | `0x1c`, `0x1d`     | `0x1c`              | `0x89` ACK family                 |
+| `00 01 08` | `0x00`, `0x01`     | `0x00`              | Variant of `0x08`?                |
+| `00 00 0c` | `0x18`, `0x19`     | `0x18`              | Focus-ring / aperture-ring family |
+
+It's a bit hard to tell right now if the next bit is independent, it's another two-bit field instead of just bit-1, or if it's a larger enum/status field? For the limited set of `88` packets here, bit 2 appears high in the longer sequences?
+
+> I couldn't figure this out after lots of different attempts, and resorted to analysis of lens update files to find clues
+
+The **5-bit check value is computed as a truncating sum of 5-bit chunks** over the packet, including the upper2 bits in the last byte.
+
+```
+g0 = b0[7:3]
+g1 = b0[2:0] : b1[7:6]
+g2 = b1[5:1]
+g3 = b1[0]   : cmd[7:4]
+g4 = cmd[3:0]: tag2[1]
+g5 = tag2[0]
+```
+
+Then `check5 = (g0 + g1 + g2 + g3 + g4 + g5) & 0x1f`
+
+Demonstrated on some packets:
+
+```
+00 00 08 20
+tag2   = 0
+check5 = 0x10
+tail   = 0x20
+
+00 02 0c 32
+tag2   = 0
+check5 = 0x19
+tail   = 0x32
+
+00 01 0c 92
+tag2   = 2
+check5 = 0x09
+tail   = 0x92
+
+00 00 3f c6
+tag2   = 3
+check5 = 0x03
+tail   = 0xc6
+```
+
+This appears correct for 100% of `602,863` captured packets.
+
+
+
+### Wire/Logical Order
+
+In the focus ring and command packets the 16-bit value appears to be big-endian formatted in the first two bytes, followed by the command byte. It's not uncommon to see BE for wire-formats, but LE is more common on most architectures. It's also more logically common to see the 'address' or 'type' fields before payload fields in most protocols.
+
+If we re-arrange the packet from 'wire order' into a reversed 'logical order' where captured wire order `04 d3 15 b0` is represented as `b0 15 d3 04` then we can consider the packet as a more normal `header command payload payload` with LE encoded payload.
+
+It's probably not wise to analyse against that shape though.
+
+
+
+
 
 ## 'Idle' Packets
 
@@ -192,6 +336,18 @@ These transactions are from the body to the lens and **describe the body.**
 - The second section of data is unknown.
   - `59353438363118111397D010110841   5` in ASCII, with some unprintable bytes
   - Unknown data
+
+### X-Mount
+
+The same behaviour is demonstrated the clonejo captures:
+
+```
+LX210A  FLZGW104XF18-55mmF2.8-4 R LM OIS
+LX212A3 FLZGF020XC50-230mmF4.5-6.7 OIS II
+LX233B  FLZGW435XF70-300mmF4-5.6 R LM OIS WR
+
+LX42      X-T2                X-T2
+```
 
 
 
@@ -613,141 +769,133 @@ The faster response of GF110 focus is also demonstrated
 
 
 
-## Packet Structure
-
-In wire-order most packets are 4-bytes of the form `payload payload command status` where useful payloads are typically big-endian signed 16-bit values or low value indexes.
-
-Throughout the docs I've been treating the seemingly unstable last byte as some kind of checksum byte, but it's actually a structure/bitfield with important meaning to the underlying behaviour.
-
-### Message/Command
-
-The command byte (third byte sent over the wire) includes an 'ack' flag at bit 7, i.e. `cmd | 0x80`, demonstrated on most currently known packets between tx and rx.
-
-The total group of unique command bytes observed is below, entries with listed CMD or ACK values are in captured files. Currently the possible `0x00` command has not been observed.
-
-| CMD    | ACK/Response | Decode status                                |
-| ------ | ------------ | -------------------------------------------- |
-| —      | `0x80`       | Transport/status, not really decoded         |
-| `0x05` | `0x85`       | Not documented/decoded                       |
-| `0x06` | `0x86`       | Not documented/decoded                       |
-| `0x08` | `0x88`       | Aperture/Focus feedback, mostly decoded.     |
-| `0x09` | `0x89`       | Not decoded                                  |
-| `0x10` | `0x90`       | Not documented/decoded                       |
-| `0x0c` | `0x8c`       | Aperture/focus control ring, mostly decoded. |
-| `0x0f` | `0x8f`       | Not decoded                                  |
-| `0x15` | `0x95`       | Focus motor, mostly decoded                  |
-| `0x16` | `0x96`       | Not documented/decoded                       |
-| `0x18` | `0x98`       | Aperture setpoint, mostly decoded            |
-| `0x20` | `0xa0`       | Not documented/decoded                       |
-| `0x28` | `0xa8`       | Not documented/decoded                       |
-| `0x2a` | `0xaa`       | Not documented/decoded                       |
-| `0x3f` | `0xbf`       | Execute/latch, mostly decoded                |
 
 
+## Firmware Update
 
-### Status Byte
+There was a pending update for the GF110. I captured the process from `1.10` to `1.20`.
 
-Originally I was calling this a checksum due to how unstable it appeared across packets. Since then it's known to include some stateful information.
+There are two firmware `.DAT` files for that update, both share the same header up to `0x200`.
 
-Using all the captured packets, de-duplicating and then sorting on 'command byte' and payload to find different header bytes for the same packet.
+- 230 long 2051-byte transfers
+    - Each block takes ~10.94 ms to transfer.
+    - After two packets, a ~145ms gap occurs presumably for writing a 4kB page.
 
-- Also filtered out all 'readout' packets that are an artifact of the SPI behaviour `00 00 00 00`.
-- Assuming packets from the body and lens use the same behaviour, but the corpus tracks which device/trace the packets are seen in.
+- Some kind of 'transfer running' low edge on capture CH2 during the bursts
+- New/update-specific packets, including a magic handshake `a5 5a 3c c3` / `c3 3c a5 5a`.
+- Firmware transfer blocks appear to be shaped as a 2-byte block index + payload + trailing check byte.
 
-Looking over the headers, there were some under-represented bits on repeated packets with different final-bytes.
-
-**Bit 0 is always low.** This seems to hold for *all* transactions I've captured (89,984 at time of observation). 
-
-Luckily,  `09 00 88`  shows that **rx and tx directions can have the same final byte for an identical payload** it's less likely there's a 'camera' or 'lens' style send/recv bit in the field. This also means it's less likely that both sides are maintaining some shared incremental packet count.
-
-The focus and iris settings use the same `0c` command byte, but when looking at the **top two bits** of the last byte, 
-
-- Iris ring `0x0c` packets are always(?) `upper = 0` across 100+ examples.
-- Focus ring `0x0c` packets are always(?) `upper = 2` across 600+ examples.
-- For focus motor `0x15` packets, the upper bits evenly distribute with `00`/`01`/`10` but never `11`. 
-- Execute/sync commands are `11`.
-
-Looking at behaviour around 'most understood' packets for iris and focus there is a fairly obvious pattern in the remaining bits:
-
-| Direction | CMD    | Prefix     | Upper-2b values | Final bits 1..5 values |
-| --------- | ------ | ---------- | --------------- | ---------------------- |
-| RX        | `0x0c` | `00 02 0c` | 2, 0            | `1a`, `19`             |
-| RX        | `0x0c` | `00 03 0c` | 2, 0            | `0a`, `09`             |
-| TX        | `0x0c` | `00 00 0c` | 2, 0            | `19`, `18`             |
-| RX/TX     | `0x15` | `01 f4 15` | 0, 2            | `0c`, `0d`             |
-| RX/TX     | `0x15` | `03 6b 15` | 0, 2            | `1d`, `1e`             |
-| RX/TX     | `0x15` | `01 23 15` | 1, 2            | `11`, `11`             |
-
-The table shows that with the upper bits taken into account, the remaining data in the trailing byte has a stable value and a one-bit field that varies.
-
-Looking at the larger set of captures, only 80 of 5153 deduplicated packets have multiple tail byte options for an otherwise identical packet. When taking the upper two bits into consideration, the remaining 5 bits have fewer variations and they aren't random as expected for a signature or checksum.
-
-This immediately **rules out sequence numbering** or global counting behaviours. ~~And I'm now convinced the remaining field(s) do not represent any kind of checksum or signature.~~
-
-Looking over the full set of packets, the remaining byte's bit 1 (or bit 0 of the 5-bit field) seems to impact the largest number of packets, responsible for the variation in 45 of 80 relevant packet examples. So pulling this bit out during review/parsing and trying to find correlations in burst sequences or with hardware behaviours is a good next step.
-
-| Prefix     | Bits 1..5 variants | After masking bit 0 | Notes                             |
-| ---------- | ------------------ | ------------------- | --------------------------------- |
-| `00 00 08` | `0x10`, `0x11`     | `0x10`              | Common idle/status request shape  |
-| `08 00 95` | `0x14`, `0x15`     | `0x14`              | `0x95` ACK family                 |
-| `08 00 89` | `0x1c`, `0x1d`     | `0x1c`              | `0x89` ACK family                 |
-| `00 01 08` | `0x00`, `0x01`     | `0x00`              | Variant of `0x08`?                |
-| `00 00 0c` | `0x18`, `0x19`     | `0x18`              | Focus-ring / aperture-ring family |
-
-It's a bit hard to tell right now if the next bit is independent, it's another two-bit field instead of just bit-1, or if it's a larger enum/status field? For the limited set of `88` packets here, bit 2 appears high in the longer sequences?
-
-> I couldn't figure this out after lots of different attempts, and resorted to analysis of lens update files to find clues
-
-The **5-bit check value is computed as a truncating sum of 5-bit chunks** over the packet, including the upper2 bits in the last byte.
+The rx side has the next expected block index, and all zeros otherwise during the long transfers and the same `5a` final byte.
 
 ```
-g0 = b0[7:3]
-g1 = b0[2:0] : b1[7:6]
-g2 = b1[5:1]
-g3 = b1[0]   : cmd[7:4]
-g4 = cmd[3:0]: tag2[1]
-g5 = tag2[0]
+tx 00 00 <2048 bytes> xx
+rx 00 01 <zeroes> 5a
+
+tx 00 01 <2048 bytes> xx
+rx 00 02 <zeroes> 5a
 ```
 
-Then `check5 = (g0 + g1 + g2 + g3 + g4 + g5) & 0x1f`
-
-Demonstrated on some packets:
+They terminate with a `0xffff` block.
 
 ```
-00 00 08 20
-tag2   = 0
-check5 = 0x10
-tail   = 0x20
+tx 00 df <2048 bytes> xx
+rx ff ff <zeroes> 5a
 
-00 02 0c 32
-tag2   = 0
-check5 = 0x19
-tail   = 0x32
-
-00 01 0c 92
-tag2   = 2
-check5 = 0x09
-tail   = 0x92
-
-00 00 3f c6
-tag2   = 3
-check5 = 0x03
-tail   = 0xc6
+tx ff ff <2048 bytes> xx
+rx ff 00 <zeroes> 5a
 ```
 
-This appears correct for 100% of `602,863` captured packets.
+
+
+Reconstructing the transfer, removed framing:
+
+-  `tx_long_strip2last` has a 262,144 bytes of contiguous matches against `GFUP0004.DAT` after `0x200`.
+-  Sparse chunks cover 302,613 bytes, 58% of `GFUP0004.DAT` after the `0x200` header.
+-  `GFUP0019.DAT` doesn't align as well, estimated 20.6% match. Could be a separate firmware bundle for a manufacturing variant?
+
+Before the first transfer, the sequence looks like this:
+
+```
+tx 80 20 28 24
+rx 00 00 00 00
+
+tx 08 10 80 22
+rx 08 02 80 14
+
+tx a5 5a 3c c3	magic word?
+rx c3 3c a5 5a	magic variant?
+
+tx 80 20 28 24
+rx a5 5a 3c c3	ack magic
+
+tx 08 10 80 22
+rx 08 00 a8 36
+
+tx 00 00 00 00
+rx 80 20 28 24
+
+tx 08 00 a8 36
+rx 08 00 80 12
+```
+
+Another sequence:
+
+```
+tx d8 e0 06 34
+rx 00 00 00 00
+
+tx 09 10 80 2a
+rx 08 00 86 2a
+
+tx 00 00 32 0e
+rx d8 e0 06 34
+
+tx 0a 00 86 3a
+rx 09 00 b2 28
+
+tx d0 00 32 44
+rx 00 00 32 0e
+
+tx 0b 00 b2 38
+rx 0a 00 b2 72
+
+tx 00 00 00 00
+rx d0 00 32 44
+
+tx 08 00 b2 62
+rx 0b 00 80 2a
+```
 
 
 
-### Wire/Logical Order
+Small packets:
 
-In the focus ring and command packets the 16-bit value appears to be big-endian formatted in the first two bytes, followed by the command byte. It's not uncommon to see BE for wire-formats, but LE is more common on most architectures. It's also more logically common to see the 'address' or 'type' fields before payload fields in most protocols.
+| Dir | Packet | Msg | Examples |
+| --- | --- | --- | --- |
+| `rx` | `08 00 86 2a` | `0x06` | `8 241` |
+| `rx` | `d8 04 06 12` | `0x06` | `242` |
+| `rx` | `d8 e0 06 34` | `0x06` | `9` |
+| `rx` | `c3 3c a5 5a` | `0x25` | `2` |
+| `rx` | `08 00 a8 36` | `0x28` | `4` |
+| `rx` | `80 20 28 24` | `0x28` | `5` |
+| `rx` | `00 00 32 0e` | `0x32` | `11` |
+| `rx` | `00 07 32 34` | `0x32` | `244` |
+| `rx` | `09 00 b2 28` | `0x32` | `10` |
+| `rx` | `0a 00 b2 72` | `0x32` | `12` |
+| `rx` | `0c 00 b2 00` | `0x32` | `243` |
+| `rx` | `0d 00 b2 4a` | `0x32` | `245` |
+| `rx` | `d0 00 32 44` | `0x32` | `13 246` |
+| `rx` | `a5 5a 3c c3` | `0x3c` | `3` |
+| `tx` | `0a 00 86 3a` | `0x06` | `10` |
 
-If we re-arrange the packet from 'wire order' into a reversed 'logical order' where captured wire order `04 d3 15 b0` is represented as `b0 15 d3 04` then we can consider the packet as a more normal `header command payload payload` with LE encoded payload.
-
-It's probably not wise to analyse against that shape though.
+An example slice of larger transfers:
 
 
+| Transaction | Bytes | TX | RX | Gap (us) | TX prefix | RX prefix |
+| ---: | ---: | --- | --- | ---: | --- | --- |
+| 15 | 2051 | `0000 .. c8` | `0001 .. 5a` | 105632.36 | `00 00 0a 00 00 56 01 ac 02 02 04 58 05 ad 06 03 08 59 09 af 0a be 0a f0 0a 00 03 c4 09 f4 01 01 ...` | `00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00` ... |
+| 16 | 2051 | `0001 .. 29` | `0002 .. 5a` | 3057.63 | `00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...` | `00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ...` |
+| 17 | 2051 | `0002 .. 69` | `0003 .. 5a` | 144296.64 | `00 02 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ...` | `00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00` ... |
 
 ## Unknown Commands
 
@@ -793,162 +941,9 @@ Found in the GF45mm capture of 'startup into firmware update mode'.
 
 > TODO review that capture
 
-### `0x10`
-
-Appears after `0x28`, then is latched with `0x3f`
-
-```
-tx 00 01 10 22
-rx 00 01 10 22
-rx 0f 00 90 0c
-tx 09 00 90 1c
-rx 0d 00 90 3c
-tx 0f 00 90 0c
-rx 08 00 90 14
-tx 0a 00 90 24
-```
-
-### `0x20`
-
-Found in startup/shutdown/playback transitions
-
-```
-tx 00 00 20 04
-rx 08 00 a0 16
-rx 00 00 20 04
-tx 0b 00 a0 2e
-tx 0e 00 a0 06
-tx 0c 00 a0 36
-tx 0d 00 a0 3e
-tx 0f 00 a0 0e
-```
-
-### `0x28`
-
-Latched/ACKed around transition sequences, sometimes immediately before `0x15` focus events.
-
-```
-rx 08 00 a8 36
-tx 80 02 28 06
-rx 80 02 28 06
-tx 0d 00 a8 1e
-tx 80 01 28 24
-rx 80 01 28 24
-tx 80 04 28 4a
-rx 08 00 a8 78
-rx 80 04 28 4a
-tx 0a 00 a8 48
-tx 08 00 a8 36
-tx 0e 00 a8 26
-```
 
 
 
-### `0x16`
-
-Very rare command seen only in auto-focus captures so far.
-
-Observed as `00 00 16 1a`, upper2 = 0, followed by execute/latch `00 00 3f c6` .
-
-```
-0x16 command: 00 00 16 1a
-0x16 ACK:     08 00 96 2c
-              0f 00 96 24
-              0c 00 96 0c
-```
-
-In sequence:
-
-```
-tx 00 00 16 1a       body sends 0x16 command
-rx 00 00 00 00
-
-tx n 10 80 ??        normal tagged status/idle-ish traffic continues
-rx 08 00 96 2c       lens ACK of the 0x16 command
-
-tx 00 00 3f c6       execute/latch
-rx 00 00 16 1a       lens echoes the 0x16 command
-
-tx n 00 96 ??        body ACK/status for the 0x16 family
-rx n 00 bf ??        lens ACK/status for the execute command
-
-tx 00 00 00 00
-rx 00 00 3f c6       lens echoes execute/latch
-
-tx 08 00 bf d8       body ACK/status for execute/latch
-rx n 00 80 ??        normal tagged status response
-
-```
-
-
-
-> TODO: Investigate and capture more examples
->
-> Possible explanations (very speculative), focus-settle, AF state transition, motor-control mode boundary.
->
-> Look into AF-S vs AF-C behaviour
->
-> Look into the 'optics valid' drive that the GF110 runs when it's on, can be heard adjusting to gravity/orientation etc.
-
-
-
-### `0x2a`
-
-Seen around `00 00 3f c6` commits.
-
-Infrequently seen in the captures near staged command bursts mostly in focus AF runs, and occasionally near focus-ring / iris-step captures.
-
-Observed payloads are `00 00`, `00 01`, and `00 04`, with upper2 = 1.
-
-```
-0x2a command: 00 00 2a 6e
-              00 01 2a 4e
-              00 04 2a 72
-
-0x2a ACK:     08 00 aa 40
-              0a 00 aa 50
-              0b 00 aa 58
-              ...
-```
-
-It is followed by the same `00 00 3f c6` execute/latch sequence as `0x15` and `0x18`, so it may represent a mode/state command rather than a direct position command.
-
-
-
-```
-00 02 2a 2e    upper2 = 0, power-on, lens-mount, preview-exit, and some focus-context captures
-00 02 2a 70    upper2 = 1, half-shutter AFS/MF captures
-```
-
-```
-tx 00 00 2a 6e
-rx -
-
-tx 08 10 80 22
-rx 08 00 aa 40
-
-tx 00 00 3f c6
-rx 00 00 2a 6e
-
-tx 09 00 aa 48
-rx 08 00 bf d8
-
-tx -
-rx 00 00 3f c6
-```
-
-
-
-
-
-### `0x0f`
-
-| Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
-| ----: | ---- | ---- | ------- | -----: | --------- | ---------- | -------: | ---------------------------------------------------------- |
-|  2796 | `rx` | `0f` | `True`  |      3 | undecoded | GF110,GF45 |       72 | `08 00 8f d2`, `09 00 8f da`, `0d 00 8f fa`, `0b 00 8f ea` |
-|  2796 | `rx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
-|  2796 | `tx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
-|  2796 | `tx` | `0f` | `True`  |      3 | undecoded | GF110,GF45 |       72 | `08 00 8f d2`, `09 00 8f da`, `0e 00 8f c2`, `0b 00 8f ea` |
 
 
 
@@ -1030,6 +1025,191 @@ rx 00 00 09 24
 
 
 
+### `0x0f`
+
+| Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
+| ----: | ---- | ---- | ------- | -----: | --------- | ---------- | -------: | ---------------------------------------------------------- |
+|  2796 | `rx` | `0f` | `True`  |      3 | undecoded | GF110,GF45 |       72 | `08 00 8f d2`, `09 00 8f da`, `0d 00 8f fa`, `0b 00 8f ea` |
+|  2796 | `rx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
+|  2796 | `tx` | `0f` | `False` |      3 | undecoded | GF110,GF45 |       72 | `00 00 0f c0`                                              |
+|  2796 | `tx` | `0f` | `True`  |      3 | undecoded | GF110,GF45 |       72 | `08 00 8f d2`, `09 00 8f da`, `0e 00 8f c2`, `0b 00 8f ea` |
+
+
+
+
+
+### `0x10`
+
+Appears after `0x28`, then is latched with `0x3f`
+
+```
+tx 00 01 10 22
+rx 00 01 10 22
+rx 0f 00 90 0c
+tx 09 00 90 1c
+rx 0d 00 90 3c
+tx 0f 00 90 0c
+rx 08 00 90 14
+tx 0a 00 90 24
+```
+
+
+
+
+
+### `0x16`
+
+Very rare command seen only in auto-focus captures so far.
+
+Observed as `00 00 16 1a`, upper2 = 0, followed by execute/latch `00 00 3f c6` .
+
+```
+0x16 command: 00 00 16 1a
+0x16 ACK:     08 00 96 2c
+              0f 00 96 24
+              0c 00 96 0c
+```
+
+In sequence:
+
+```
+tx 00 00 16 1a       body sends 0x16 command
+rx 00 00 00 00
+
+tx n 10 80 ??        normal tagged status/idle-ish traffic continues
+rx 08 00 96 2c       lens ACK of the 0x16 command
+
+tx 00 00 3f c6       execute/latch
+rx 00 00 16 1a       lens echoes the 0x16 command
+
+tx n 00 96 ??        body ACK/status for the 0x16 family
+rx n 00 bf ??        lens ACK/status for the execute command
+
+tx 00 00 00 00
+rx 00 00 3f c6       lens echoes execute/latch
+
+tx 08 00 bf d8       body ACK/status for execute/latch
+rx n 00 80 ??        normal tagged status response
+
+```
+
+
+
+> TODO: Investigate and capture more examples
+>
+> Possible explanations (very speculative), focus-settle, AF state transition, motor-control mode boundary.
+>
+> Look into AF-S vs AF-C behaviour
+>
+> Look into the 'optics valid' drive that the GF110 runs when it's on, can be heard adjusting to gravity/orientation etc.
+
+
+
+
+
+### `0x20`
+
+Found in startup/shutdown/playback transitions. Likely candidate is OIS.
+
+```
+tx 00 00 20 04
+rx 08 00 a0 16
+rx 00 00 20 04
+tx 0b 00 a0 2e
+tx 0e 00 a0 06
+tx 0c 00 a0 36
+tx 0d 00 a0 3e
+tx 0f 00 a0 0e
+```
+
+
+
+### `0x25`
+
+Found during update process.
+
+
+
+### `0x28`
+
+Latched/ACKed around transition sequences, sometimes immediately before `0x15` focus events.
+
+```
+rx 08 00 a8 36
+tx 80 02 28 06
+rx 80 02 28 06
+tx 0d 00 a8 1e
+tx 80 01 28 24
+rx 80 01 28 24
+tx 80 04 28 4a
+rx 08 00 a8 78
+rx 80 04 28 4a
+tx 0a 00 a8 48
+tx 08 00 a8 36
+tx 0e 00 a8 26
+```
+
+
+
+### `0x2a`
+
+Seen around `00 00 3f c6` commits.
+
+Infrequently seen in the captures near staged command bursts mostly in focus AF runs, and occasionally near focus-ring / iris-step captures.
+
+Observed payloads are `00 00`, `00 01`, and `00 04`, with upper2 = 1.
+
+```
+0x2a command: 00 00 2a 6e
+              00 01 2a 4e
+              00 04 2a 72
+
+0x2a ACK:     08 00 aa 40
+              0a 00 aa 50
+              0b 00 aa 58
+              ...
+```
+
+It is followed by the same `00 00 3f c6` execute/latch sequence as `0x15` and `0x18`, so it may represent a mode/state command rather than a direct position command.
+
+
+
+```
+00 02 2a 2e    upper2 = 0, power-on, lens-mount, preview-exit, and some focus-context captures
+00 02 2a 70    upper2 = 1, half-shutter AFS/MF captures
+```
+
+```
+tx 00 00 2a 6e
+rx -
+
+tx 08 10 80 22
+rx 08 00 aa 40
+
+tx 00 00 3f c6
+rx 00 00 2a 6e
+
+tx 09 00 aa 48
+rx 08 00 bf d8
+
+tx -
+rx 00 00 3f c6
+```
+
+
+
+### `0x32`
+
+Seen during firmware update process
+
+
+
+### `0x3c`
+
+Seen during firmware update capture
+
+
+
 # Untestable Fields
 
 ## Zoom Feedback
@@ -1038,7 +1218,7 @@ Both of my GF lenses are primes, but there must be a field(s) which provide feed
 
 > It would be much appreciated if anyone is able to capture short, clean sequences before and after a manual change to the zoom, with and/or without taking a photo in between. Including either the photos or a copy of the exif of photos taken during the capture may allow for additional correlation
 
-
+TODO: look at clonejo x-mount captures
 
 ## Image Stabilisation
 
@@ -1071,6 +1251,14 @@ imgstabi
 手ブレ補正S2動画開始 / 終了
   shake correction S2 movie start / end
 ```
+
+
+
+Digging through the clonejo captures, `0x20` is well enough labelled for correlation.
+
+\- Seen in `ois-on-off`, `ois-turn-on`, `ois-turn-off`, and some `on-expose-off` captures.
+
+\- Common forms: `00 00 20 04`, `00 01 20 24`, `08 00 a0 16`.
 
 ## Teleconverter
 
