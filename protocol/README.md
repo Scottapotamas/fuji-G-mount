@@ -180,23 +180,9 @@ This appears correct for 100% of `602,863` captured packets.
 
 
 
-### Wire/Logical Order
+## Status Packets
 
-In the focus ring and command packets the 16-bit value appears to be big-endian formatted in the first two bytes, followed by the command byte. It's not uncommon to see BE for wire-formats, but LE is more common on most architectures. It's also more logically common to see the 'address' or 'type' fields before payload fields in most protocols.
-
-If we re-arrange the packet from 'wire order' into a reversed 'logical order' where captured wire order `04 d3 15 b0` is represented as `b0 15 d3 04` then we can consider the packet as a more normal `header command payload payload` with LE encoded payload.
-
-It's probably not wise to analyse against that shape though.
-
-
-
-
-
-## 'Idle' Packets
-
-When the camera is powered on but is otherwise sitting idle, we see a burst of transactions occur every 40ms.
-
-These packets represent the bulk of 'noise' when watching packet traces, so understanding, decoding and then filtering them represents a worthwhile effort.
+When the camera is powered on but is otherwise sitting idle, we see a burst of transactions occur every 40ms. These packets represent the bulk of 'noise' when watching packet traces.
 
 ![idle-burst-4](./images/idle-burst-4.png)
 
@@ -207,44 +193,48 @@ These packets represent the bulk of 'noise' when watching packet traces, so unde
 | 3              | -                     | `0x03 0x80 0x08 0x3C` |
 | 4              | `0x08 0x00 0x88 0x??` | `0x?? 0x00 0x80 0x??` |
 
-On every third burst, we have 2 additional transactions for a 6 transaction 'group'.
+The `0x08` packets from the body are requesting updates from the lens like aperture or focus control ring values, motor feedback etc.
+
+This packet is also seen in the normal polling/idle traffic with tag 0, polled by the body with `00 00 08 20`. The lens-side non-ACK response should be treated as a compact status/event bitfield, but the meaning of these bits isn't entirely known yet.
+
+The low seven bits of payload `b1` appear to identify pending follow-up requests:
+
+| Lens response payload | Follow-up body poll                                | Interpretation                                |
+| --------------------- | -------------------------------------------------- | --------------------------------------------- |
+| `00 08`, `00 88`      | `00 00 0c b2`                                      | Focus ring / focus-control readout pending    |
+| `00 10`, `00 90`      | `00 00 0c 30`                                      | Aperture ring / aperture mode readout pending |
+| `00 00`, `00 80`      | next normal tag-0 poll                             | No specialised data pending                   |
+| `00 02`, `00 82`      | Status/detail path such as `0x0f` or tag2 feedback | Active/detail/actuation-status candidate      |
+
+`b1 bit7` might be a scheduler or response-phase marker. It not clear if it's a  dirty/valid/busy bit yet. ACK `0x88` tag-0 packets are transport acknowledgements and should be excluded ignored as part of the lens-state polling.
+
+On every third burst, we have 2 additional transactions for a 6 transaction 'group'. This happens every 120ms.
 
 ![idle-burst-6](./images/idle-burst-6.png)
 
-| Transmission # | Camera                | Lens                  |
-| -------------- | --------------------- | --------------------- |
-| 1              | `0x00 0x00 0x08 0x20` | -                     |
-| 2              | `0x?? 0x10 0x80 0x??` | `0x08 0x00 0x88 0x32` |
-| 3              | `0x00 0x00 0x09 0xA6` | `0x03 0x80 0x08 0x3C` |
-| 4              | `0x?? 0x00 0x88 0x??` | `0x?? 0x00 0x89 0x??` |
-| 5              | -                     | `0x00 0x15 0x09 0x9A` |
-| 6              | `0x08 0x00 0x89 0xB8` | `0x?? 0x00 0x80 0x??` |
+These bursts add the `0x09` request `00 00 09 a6`. 
 
-For both the 4 and 6 packet bursts, the first bytes marked as `0x??` seem to vary between subsequent bursts, but a random sampling of 5 bursts in a row gives a feel that they're not immediately exhibiting packet counting behaviour.
+| Transmission # | Camera        | Lens          | Notes                                                        |
+| :------------- | ------------- | ------------- | ------------------------------------------------------------ |
+| 0              | `00 00 08 20` | -             | Normal `0x08` status request                                 |
+| 1              | `n 10 80 ??`  | `08 00 88 32` | Tagged transport/status + ACK                                |
+| 2              | `00 00 09 a6` | `xx xx 08 ??` | Body requests `0x09`; lens returns normal `0x08` status due to pipeline delay |
+| 3              | `n 00 88 ??`  | `n 00 89 ??`  | ACK path for previous `0x08`/`0x09` traffic                  |
+| 4              | -             | `00 xx 09 ??` | Lens returns the non-ACK `0x09` payload                      |
+| 5              | `08 00 89 b8` | `n 00 80 ??`  | Body ACKs the `0x09` response                                |
 
-> The final bytes marked `0x??` were not understood when this was written and were left alone due to their percieved unstable nature.
+The response seems to be small values, examples:
 
+``` 
+00 11 09 96
+00 12 09 b8
+00 13 09 98
+00 14 09 ba
+00 15 09 9a
+00 16 09 bc
+```
 
-
-> Newer analysis pass from GF110 idle capture
-
-
-
-
-| Count | Lens | Burst length | Kind | Signature |
-| ---: | --- | ---: | --- | --- |
-| 164 | `GF110` | 4 | `masked` | `00 00 08 ??/- | n 10 80 ??/n 00 88 ?? | -/00 80 08 ?? | n 00 88 ??/n 00 80 ??` |
-| 83 | `GF110` | 6 | `masked` | `00 00 08 ??/- | n 10 80 ??/n 00 88 ?? | 00 00 09 ??/00 80 08 ?? | n 00 88 ??/n 00 89 ?? | -/00 12 09 ?? | n 00 89 ??/n 00 80 ??` |
-| 42 | `GF110` | 6 | `exact` | `00 00 08 20/- | 08 10 80 22/08 00 88 32 | 00 00 09 a6/00 80 08 24 | 09 00 88 3a/08 00 89 b8 | -/00 12 09 b8 | 08 00 89 b8/09 00 80 1a` |
-| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0a 10 80 32/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0a 00 80 22` |
-| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0b 10 80 3a/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0b 00 80 2a` |
-| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0e 10 80 12/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0e 00 80 02` |
-| 41 | `GF110` | 4 | `exact` | `00 00 08 20/- | 0f 10 80 1a/08 00 88 32 | -/00 80 08 24 | 08 00 88 32/0f 00 80 0a` |
-| 41 | `GF110` | 6 | `exact` | `00 00 08 20/- | 0c 10 80 02/08 00 88 32 | 00 00 09 a6/00 80 08 24 | 0d 00 88 1a/0c 00 89 98 | -/00 12 09 b8 | 08 00 89 b8/0d 00 80 3a` |
-
-
-
-
+> TODO: Work out what these mean
 
 
 
@@ -630,7 +620,19 @@ index = ((BE16(AA BB) - 0x1000) / 0x40) + 1
 
 ### Feedback
 
-The body sends `00 01 08 82`, and the lens appears to return `<aperture_index> 00 08 <tail>` where index seems to correlate similarly to the control ring? `00 -> f2.8` and `15 = f32` for GF45.
+The body sends `00 01 08 82`, and the lens appears to return `<aperture_bitfield> 00 08 <tail>` which includes an index that correlates similarly to the control ring e.g. `00 -> f2.8` and `15 = f32` for GF45.
+
+These have upper2/tag value of `2`. Firmware analysis shows the payload bitfield might be shaped like
+
+```
+uint8_t iris_index = b0 & 0x1f;
+bool flag5 = b0 & 0x20;
+bool flag6 = b0 & 0x40;
+bool flag7 = b0 & 0x80;
+uint8_t aux = b1;
+```
+
+
 
 Same behaviour on GF110. DoF-preview enabled sweep shows the ring, camera command and feedback aligning well.
 
@@ -683,11 +685,15 @@ Plotting the values during a AF single-shot sequence for the captures using GF45
 
 Given the focus occasionally runs at different speeds and we see some easing in the feedback position shape, I did a review pass looking for variations to understand what the likely meaning of the first and second payloads represent. 
 
-### Duration/speed?
+> Firmware string extraction found `FOCUS VLT`, `FOCUS PLS`, `FOCUS SPD` modes, which helped narrow down the 'not position' fields
 
-The value doesn't seem to correlate to previous positions or the upcoming position. There is a good linear correlation to the duration of the focus move for the smaller values, ~0.141ms/count. The 5000 value move is less correlated though and the 32767 doesn't align with motor actuation.
+### Envelope/Budget
 
-> Treat this as poorly substantiated correlation, need more capture data
+The value doesn't seem to correlate to previous positions or the upcoming position.
+
+There is a good linear correlation to the duration of the focus move for the smaller values, ~0.141ms/count. The 5000 value move is less correlated though and the 32767 doesn't align with motor actuation.
+
+> Treat this as poorly substantiated correlation
 
 | Tag 0 packet  | Value   | Mean CH2 low |
 | ------------- | ------- | ------------ |
@@ -700,16 +706,16 @@ The value doesn't seem to correlate to previous positions or the upcoming positi
 
 
 
-### Unknown Field
+### Speed/Mode
 
-The 'tag 1' field isn't very well understood. In the slower AF captures (low light) there are fewer and longer CH2 pulses which provide the most with variation. 
+The 'tag 1' field isn't fully understood. In the slower AF captures (low light) there are fewer and longer CH2 pulses which provide the most with variation. 
 
 - Manual focus tests all have `01 20 15 40`, the constantly seen `288` value in the longer captures. 
   - Anecdotally the focus speed/sound is the same in manual mode?
 - Autofocus runs show different values:
   - GF45 and GF110 captures have the some of the same fields 
 
-This might also relate to the mode, focus move type or curve?
+This might also relate to the focus move type or curve?
 
 | `0x15` with Tag 1 payloads (hex) | BE16 decimal |
 | -------------------------------- | ------------ |
@@ -899,11 +905,7 @@ An example slice of larger transfers:
 
 ## Unknown Commands
 
-Filtering and sorting for packets which are less understood. Over time these should be removed from the table into their own sections.
-
-Some others were only captured in the 'old' capture sets, so I need to re-run a captures for GF110 focus motor energisation to maintain position, and shutter activation of varying duration(s).
-
-> TODO: document behaviour/categorisation of these in relevant sections when enough is known about them
+Filtering and sorting for packet variatns which are less understood. Over time these should be removed from the table into their own sections.
 
 ### `0x05`
 
@@ -943,42 +945,9 @@ Found in the GF45mm capture of 'startup into firmware update mode'.
 
 
 
-
-
-
-
 ### `0x09`
 
-| Count | Dir  | Msg  | ACK     | Upper2 | Reason    | Lenses     | Captures | Top packets                                                |
-| ----: | ---- | ---- | ------- | -----: | --------- | ---------- | -------: | ---------------------------------------------------------- |
-|  7704 | `rx` | `09` | `False` |      2 | undecoded | GF110,GF45 |       94 | `00 13 09 98`, `00 14 09 ba`, `00 12 09 b8`, `00 15 09 9a` |
-|  7704 | `tx` | `09` | `False` |      2 | undecoded | GF110,GF45 |       94 | `00 00 09 a6`                                              |
-|  2778 | `rx` | `09` | `False` |      3 | undecoded | GF110,GF45 |       66 | `00 01 09 c8, 00 00 09 e8, 00 03 09 ca, 00 02 09 ea`       |
-|  2778 | `tx` | `09` | `False` |      3 | undecoded | GF110,GF45 |       66 | `00 00 09 e8`                                              |
-
-Appears to splits into two families by upper2 state.
-
-When `upper2 = 2` we see it in extended idle/status sequence (6 transaction burst variant)
-
-| Slot | Camera TX        | Lens RX          |
-| ---- | ---------------- | ---------------- |
-| 0    | `00 00 08 20`    | -                |
-| 1    | `0b 10 80 3a`    | `08 00 88 32`    |
-| 2    | `00 00 09 a6` <- | `00 00 08 20`    |
-| 3    | `0c 00 88 12`    | `0b 00 89 90`    |
-| 4    | -                | `00 16 09 bc` <- |
-| 5    | `08 00 89 b8`    | `0c 00 80 32`    |
-
-The body request is `00 00 09 a6`, with the lens response containing payloads like:
-
-```
-00 11 09 96
-00 12 09 b8
-00 13 09 98
-00 14 09 ba
-00 15 09 9a
-00 16 09 bc
-```
+Appears to splits into two families by upper2 tag state. When `upper2 = 2` we see it in the 6-burtst status sequence (refer status sequence section. 
 
 
 
@@ -1036,8 +1005,6 @@ rx 00 00 09 24
 
 
 
-
-
 ### `0x10`
 
 Appears after `0x28`, then is latched with `0x3f`
@@ -1052,8 +1019,6 @@ tx 0f 00 90 0c
 rx 08 00 90 14
 tx 0a 00 90 24
 ```
-
-
 
 
 
