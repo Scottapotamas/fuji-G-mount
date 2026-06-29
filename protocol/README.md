@@ -68,15 +68,15 @@ The total group of unique command bytes observed is below, entries with listed C
 | `0x05` | `0x85`       | Not documented/decoded                       |
 | `0x06` | `0x86`       | Not documented/decoded                       |
 | `0x07` |              | Not documented/decoded                       |
-| `0x08` | `0x88`       | Aperture/Focus feedback, mostly decoded.     |
-| `0x09` | `0x89`       | Not decoded                                  |
+| `0x08` | `0x88`       | Aperture/Focus and lens state feedback       |
+| `0x09` | `0x89`       | Longer lens status bursts, not understood    |
 | `0x10` | `0x90`       | Not documented/decoded                       |
 | `0x0c` | `0x8c`       | Aperture/focus control ring, mostly decoded. |
 | `0x0f` | `0x8f`       | Not decoded                                  |
 | `0x15` | `0x95`       | Focus motor, mostly decoded                  |
 | `0x16` | `0x96`       | Not documented/decoded                       |
 | `0x18` | `0x98`       | Aperture setpoint, mostly decoded            |
-| `0x20` | `0xa0`       | Not documented/decoded                       |
+| `0x20` | `0xa0`       | OIS. Not documented/decoded                  |
 | `0x25` |              | Not documented/decoded                       |
 | `0x28` | `0xa8`       | Not documented/decoded                       |
 | `0x2a` | `0xaa`       | Not documented/decoded                       |
@@ -234,7 +234,11 @@ The response seems to be small values, examples:
 00 16 09 bc
 ```
 
-> TODO: Work out what these mean
+`00 0f`, `00 10` payloads are seen only 5 times in the capture sets, around startup transitions.
+
+The payload value seems relatively stable/constant across most captures, when it does change it seems to toggle between adjacent values, e.g. `00 13 <-> 00 14`, `00 14 <-> 00 15` rather than jumping around.
+
+> TODO: Work out what this actually represents?
 
 
 
@@ -775,6 +779,57 @@ The faster response of GF110 focus is also demonstrated
 
 
 
+## Focus Mode?
+
+The `0x2a` packets (acked as `0xaa`) are one of the only unique packets with strong correlation to the focus mode selection switch on the GFX50R. 
+
+It appears once in each of the single AF-S/AF-C/MF change captures for both GF45 and GF110, and repeats four times in the AF-S/AF-C/MF back and forth capture. It's also seen in wake, power-on and a few AF captures which would be expected.
+
+The payload doesn't seem to change predictably between modes, `00 04 2a 72` is in each capture.
+
+```
+00 02 2a 2e    upper2 = 0, power-on, lens-mount, preview-exit, and some focus-context captures
+00 02 2a 70    upper2 = 1, half-shutter AFS/MF captures
+```
+
+```
+00 00 2a 6e    Tag 0
+00 01 2a 4e    Tag 0
+00 02 2a 2e    Tag 0
+00 04 2a 30    Tag 0
+
+00 00 2a 6e    Tag 1
+00 01 2a 4e    Tag 1
+00 02 2a 70    Tag 1
+00 04 2a 72    Tag 1
+
+ACK packets
+08 00 aa 40
+0a 00 aa 50
+0b 00 aa 58
+```
+
+It is followed by the same `00 00 3f c6` execute/latch sequence as focus and iris commands. Example sequence:
+
+```
+tx 00 00 2a 6e
+rx -
+
+tx 08 10 80 22
+rx 08 00 aa 40
+
+tx 00 00 3f c6
+rx 00 00 2a 6e
+
+tx 09 00 aa 48
+rx 08 00 bf d8
+
+tx -
+rx 00 00 3f c6
+```
+
+
+
 
 
 ## Firmware Update
@@ -947,28 +1002,7 @@ Found in the GF45mm capture of 'startup into firmware update mode'.
 
 ### `0x09`
 
-Appears to splits into two families by upper2 tag state. When `upper2 = 2` we see it in the 6-burtst status sequence (refer status sequence section. 
-
-
-
-When `upper2 = 3` it's part of a active sequence not seen during 'idle refresh' 4-burst groups.
-
-This appears sequenced with `0x0f` and `0x08`:
-
-```
-00 00 0f c0
-00 00 09 e8
-00 01 08 42
-```
-
-The 0x09 lens response has a payload value, observed as:
-
-```
-00 00 09 e8
-00 01 09 c8
-00 02 09 ea
-00 03 09 ca
-```
+Appears to splits into two families by upper2 tag state. Upper 2=0 is noted in the status packet section
 
 
 
@@ -1113,55 +1147,6 @@ tx 0a 00 a8 48
 tx 08 00 a8 36
 tx 0e 00 a8 26
 ```
-
-
-
-### `0x2a`
-
-Seen around `00 00 3f c6` commits.
-
-Infrequently seen in the captures near staged command bursts mostly in focus AF runs, and occasionally near focus-ring / iris-step captures.
-
-Observed payloads are `00 00`, `00 01`, and `00 04`, with upper2 = 1.
-
-```
-0x2a command: 00 00 2a 6e
-              00 01 2a 4e
-              00 04 2a 72
-
-0x2a ACK:     08 00 aa 40
-              0a 00 aa 50
-              0b 00 aa 58
-              ...
-```
-
-It is followed by the same `00 00 3f c6` execute/latch sequence as `0x15` and `0x18`, so it may represent a mode/state command rather than a direct position command.
-
-
-
-```
-00 02 2a 2e    upper2 = 0, power-on, lens-mount, preview-exit, and some focus-context captures
-00 02 2a 70    upper2 = 1, half-shutter AFS/MF captures
-```
-
-```
-tx 00 00 2a 6e
-rx -
-
-tx 08 10 80 22
-rx 08 00 aa 40
-
-tx 00 00 3f c6
-rx 00 00 2a 6e
-
-tx 09 00 aa 48
-rx 08 00 bf d8
-
-tx -
-rx 00 00 3f c6
-```
-
-
 
 ### `0x32`
 
